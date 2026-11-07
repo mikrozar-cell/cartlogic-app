@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.env
+*.sqlite3
+video_temp/
+.pytest_cache/
+.shopify/
+*.png
+*.webm
+
+

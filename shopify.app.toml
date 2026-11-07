@@ -1,0 +1,30 @@
+# CartLogic — Order & Quantity Limits (Shopify App Configuration)
+name = "CartLogic Order & Quantity Limits"
+application_url = "https://cartlogic-app.onrender.com"
+embedded = true
+
+[build]
+include_config_on_deploy = true
+
+[access_scopes]
+scopes = "read_products,write_products"
+
+[auth]
+redirect_urls = [
+  "https://cartlogic-app.onrender.com/auth/callback"
+]
+
+[webhooks]
+api_version = "2025-01"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/gdpr"
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+
+[pos]
+embedded = false
+

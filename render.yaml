@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: cartlogic-app
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
+      - key: APP_URL
+        value: https://cartlogic-app.onrender.com
+

@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="shopify-api-key" content="__SHOPIFY_API_KEY__" />
+  <title>CartLogic — Order &amp; Quantity Limits</title>
+  <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+  <style>
+    :root {
+      --bg-page: #f1f2f4;
+      --bg-surface: #ffffff;
+      --bg-subdued: #f7f8f9;
+      --bg-hover: #f3f4f6;
+      --border-base: #e3e3e3;
+      --border-strong: #c9cccf;
+      --text-primary: #1a1a1a;
+      --text-secondary: #5c5f62;
+      --text-muted: #8c9196;
+      --accent-dark: #1a1a1a;
+      --accent-dark-hover: #303030;
+      --success-bg: #cdfee1;
+      --success-border: #92f5be;
+      --success-text: #0c5132;
+      --success-dot: #127848;
+      --critical-bg: #fed3d1;
+      --critical-border: #fdaea9;
+      --critical-text: #8e1f0b;
+      --critical-dot: #d72c0d;
+      --warning-bg: #ffebac;
+      --warning-text: #5e4200;
+      --info-bg: #eaf4ff;
+      --info-text: #005bd3;
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 10px;
+      --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      --font-sans: Inter, -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-page);
+      color: var(--text-primary);
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Top Navigation Bar */
+    .topbar {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-base);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-mark {
+      width: 26px;
+      height: 26px;
+      background: var(--accent-dark);
+      color: #fff;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .brand-title {
+      font-weight: 600;
+      font-size: 14px;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+    }
+
+    .breadcrumb-sep {
+      color: var(--border-strong);
+      font-size: 13px;
+    }
+
+    .breadcrumb-sub {
+      color: var(--text-secondary);
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Status & Meta Pills */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 500;
+      border: 1px solid var(--border-base);
+      background: var(--bg-subdued);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .status-pill--active {
+      background: var(--success-bg);
+      border-color: var(--success-border);
+      color: var(--success-text);
+    }
+
+    .status-pill--paused {
+      background: var(--warning-bg);
+      border-color: #f5d061;
+      color: var(--warning-text);
+    }
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 12px;
+      font-family: var(--font-sans);
+      font-size: 12.5px;
+      font-weight: 550;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+      white-space: nowrap;
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+    }
+
+    .btn:hover {
+      background: var(--bg-hover);
+    }
+
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .btn--primary {
+      background: var(--accent-dark);
+      color: #ffffff;
+      border-color: #000000;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.12);
+    }
+
+    .btn--primary:hover {
+      background: var(--accent-dark-hover);
+    }
+
+    .btn--sm {
+      padding: 4px 8px;
+      font-size: 11.5px;
+    }
+
+    .btn--ghost {
+      border-color: transparent;
+      box-shadow: none;
+      background: transparent;
+      color: var(--text-secondary);
+      padding: 4px 6px;
+    }
+
+    .btn--ghost:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    /* Page Container */
+    .workspace {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 18px 24px 36px;
+    }
+
+    /* Notification Toast Banner */
+    .toast-banner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      border-radius: var(--radius-md);
+      background: var(--accent-dark);
+      color: #ffffff;
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+
+    .toast-banner.visible {
+      display: flex;
+    }
+
+    /* KPI Strip */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .kpi-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      box-shadow: var(--shadow-card);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .kpi-label {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .kpi-value {
+      font-size: 18px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+    }
+
+    .kpi-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Main Split Layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.52fr) minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .main-grid > div {
+      min-width: 0;
+    }
+
+    .panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+      margin-bottom: 14px;
+      min-width: 0;
+    }
+
+    .panel-header {
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--bg-surface);
+    }
+
+    .panel-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* Data Table */
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th {
+      padding: 8px 9px;
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--text-secondary);
+      background: var(--bg-subdued);
+      border-bottom: 1px solid var(--border-base);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 8px 9px;
+      border-bottom: 1px solid var(--border-base);
+      vertical-align: middle;
+      font-size: 12px;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background-color: #fafbfb;
+    }
+
+    .rule-name-cell {
+      font-weight: 600;
+      color: var(--text-primary);
+      display: block;
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 195px;
+    }
+
+    .rule-msg-preview {
+      font-size: 11px;
+      color: var(--text-secondary);
+      max-width: 195px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+    }
+
+    .tag-target {
+      max-width: 135px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: inline-block;
+      vertical-align: bottom;
+    }
+
+    /* Tags & Badges */
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 5px;
+      font-size: 11.5px;
+      font-weight: 500;
+      white-space: nowrap;
+      background: var(--bg-subdued);
+      border: 1px solid var(--border-base);
+      color: var(--text-primary);
+    }
+
+    .tag--mono {
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .tag--b2b {
+      background: var(--info-bg);
+      border-color: #b8dafe;
+      color: var(--info-text);
+    }
+
+    .tag--retail {
+      background: #f4f0ff;
+      border-color: #d8cbff;
+      color: #5722b5;
+    }
+
+    .tag--constraint {
+      background: #1a1a1a;
+      color: #ffffff;
+      border-color: #1a1a1a;
+      font-weight: 550;
+    }
+
+    /* Toggle Switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 32px;
+      height: 18px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: #c9cccf;
+      transition: 0.15s;
+      border-radius: 999px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: 0.15s;
+      border-radius: 50%;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+
+    input:checked + .slider {
+      background-color: #127848;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(14px);
+    }
+
+    /* Form Controls */
+    .form-body {
+      padding: 16px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .form-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 550;
+      color: var(--text-primary);
+    }
+
+    .field-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 7px 10px;
+      font-family: var(--font-sans);
+      font-size: 12.5px;
+      color: var(--text-primary);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      outline: none;
+      transition: border-color 0.12s;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--accent-dark);
+      box-shadow: 0 0 0 1px var(--accent-dark);
+    }
+
+    .token-bar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 5px;
+    }
+
+    .token-chip {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--bg-subdued);
+      border: 1px solid var(--border-base);
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .token-chip:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+    }
+
+    /* Simulator Panel */
+    .sim-section {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-base);
+    }
+
+    .sim-context-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .cart-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border-base);
+      gap: 10px;
+    }
+
+    .cart-line:last-child {
+      border-bottom: none;
+    }
+
+    .cart-line-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .cart-line-title {
+      font-size: 12.5px;
+      font-weight: 550;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cart-line-meta {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+    }
+
+    .stepper {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: var(--bg-surface);
+    }
+
+    .stepper button {
+      width: 26px;
+      height: 26px;
+      border: none;
+      background: var(--bg-subdued);
+      color: var(--text-primary);
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stepper button:hover {
+      background: var(--bg-hover);
+    }
+
+    .stepper input {
+      width: 42px;
+      height: 26px;
+      border: none;
+      border-left: 1px solid var(--border-base);
+      border-right: 1px solid var(--border-base);
+      border-radius: 0;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 0;
+    }
+
+    .stepper input:focus {
+      box-shadow: none;
+    }
+
+    /* Checkout Validation Banner */
+    .checkout-result {
+      padding: 14px 16px;
+    }
+
+    .validation-box {
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      border: 1px solid var(--border-base);
+    }
+
+    .validation-box--blocked {
+      background: #fff5f5;
+      border-color: var(--critical-border);
+      color: var(--critical-text);
+    }
+
+    .validation-box--valid {
+      background: #f1fdf6;
+      border-color: var(--success-border);
+      color: var(--success-text);
+    }
+
+    .validation-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+      font-size: 12.5px;
+      margin-bottom: 8px;
+    }
+
+    .violation-item {
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(215, 44, 13, 0.2);
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: #1a1a1a;
+    }
+
+    .violation-target {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--critical-text);
+      font-weight: 600;
+    }
+
+    .violation-remedy {
+      margin-top: 4px;
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* JSON Code Block */
+    .code-box {
+      background: #141619;
+      color: #e5e7eb;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 12px 14px;
+      overflow-x: auto;
+      max-height: 210px;
+      line-height: 1.5;
+    }
+
+    svg.icon {
+      width: 15px;
+      height: 15px;
+      stroke: currentColor;
+      stroke-width: 1.75;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <!-- Top Shopify Admin Operational Bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="brand-mark">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+      </div>
+      <span class="brand-title">CartLogic</span>
+      <span class="breadcrumb-sep">/</span>
+      <span class="breadcrumb-sub">Cart &amp; Checkout Validation Rules</span>
+    </div>
+
+    <div class="topbar-right">
+      <span class="status-pill" id="shopDomainPill">Store: demo-store.myshopify.com</span>
+      <span class="status-pill status-pill--active" id="engineStatusPill">
+        <span class="dot"></span>
+        <span id="engineStatusText">Enforcement Active</span>
+      </span>
+      <button type="button" class="btn btn--sm" id="toggleEnforcementBtn" onclick="toggleGlobalEnforcement()">
+        Pause Enforcement
+      </button>
+      <button type="button" class="btn btn--sm" id="proPlanBtn" onclick="activateProSubscription()">
+        Pro Plan Active
+      </button>
+      <button type="button" class="btn btn--primary btn--sm" id="syncCheckoutBtn" onclick="syncToShopifyCheckout()">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+        Sync to Checkout Edge
+      </button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <div class="toast-banner" id="toastBanner">
+      <span id="toastMessage">Validation rules compiled and synchronized to Shopify Function Metafield.</span>
+      <button type="button" class="btn btn--sm" style="background:transparent;color:#fff;border-color:rgba(255,255,255,0.3)" onclick="hideToast()">Dismiss</button>
+    </div>
+
+    <!-- KPI Metrics Strip -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">
+          <span>Active Validation Rules</span>
+          <svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg>
+        </div>
+        <div class="kpi-value" id="kpiActiveCount">4 / 4</div>
+        <div class="kpi-meta" id="kpiSchemaVersion">Schema: cart-checkout-validation.v1</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label">
+          <span>Protected Checkout Surfaces</span>
+          <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div class="kpi-value">All Express &amp; Cart</div>
+        <div class="kpi-meta">Standard · Shop Pay · Apple Pay · B2B</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label">
+          <span>Customer Segment Filters</span>
+          <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <div class="kpi-value" id="kpiSegmentsSummary">B2B &amp; Retail Split</div>
+        <div class="kpi-meta">Tag-based exemptions enabled</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label">
+          <span>Live Cart Test Status</span>
+          <svg class="icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <div class="kpi-value" id="kpiSimStatus">2 Violations</div>
+        <div class="kpi-meta" id="kpiSimSubtotal">Simulated Cart: €806.50 (10 units)</div>
+      </div>
+    </section>
+
+    <div class="main-grid">
+      <!-- LEFT COLUMN: Rules Table & Rule Editor -->
+      <div>
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                Checkout Validation Rules
+              </div>
+              <div class="panel-subtitle">
+                Evaluated server-side before payment authorization. Cannot be bypassed via express checkout buttons.
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="btn btn--sm" onclick="resetDefaultRules()">Reset Defaults</button>
+              <button type="button" class="btn btn--primary btn--sm" onclick="openNewRuleComposer()">+ New Validation Rule</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:42px;">On</th>
+                  <th>Rule &amp; Checkout Error Message</th>
+                  <th>Constraint</th>
+                  <th>Catalog Target</th>
+                  <th>Buyer Segment</th>
+                  <th style="text-align:right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="rulesTableBody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Rule Builder / Editor Card -->
+        <section class="panel" id="ruleComposerPanel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title" id="composerHeading">Configure Validation Rule</div>
+              <div class="panel-subtitle">Define quantity multiples, order value bounds, or customer tag conditions.</div>
+            </div>
+            <span class="tag tag--mono" id="editingRuleIdBadge">NEW RULE</span>
+          </div>
+
+          <div class="form-body">
+            <input type="hidden" id="formRuleId" value="" />
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="formRuleName">Rule Name</label>
+                <input type="text" id="formRuleName" placeholder="e.g. Wholesale Case Pack Increment (6 Units)" />
+              </div>
+
+              <div class="field">
+                <label for="formRuleType">Validation Constraint Type</label>
+                <select id="formRuleType" onchange="onRuleTypeChange()">
+                  <option value="step_multiple">Case Pack / Step Multiple (e.g. packs of 6, 12)</option>
+                  <option value="item_quantity">Per-Product Quantity Limit (Min / Max per SKU)</option>
+                  <option value="cart_value">Order Subtotal Value Limit (Min / Max €)</option>
+                  <option value="cart_quantity">Total Cart Units Limit (Min / Max total items)</option>
+                  <option value="collection_limit">Collection Quantity Limit (Min / Max in collection)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="formTargetSelect">Catalog Target Scope</label>
+                <select id="formTargetSelect">
+                  <!-- Populated from store products & collections -->
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="formCustomerSegment">Customer Segment Eligibility</label>
+                <div style="display:flex;gap:8px;">
+                  <select id="formCustomerSegment" onchange="onSegmentChange()" style="flex:1.4;">
+                    <option value="all">All Visitors &amp; Customers</option>
+                    <option value="b2b_only">B2B / Wholesale Tag Only</option>
+                    <option value="retail_only">Retail Only (Exempt B2B Tag)</option>
+                    <option value="logged_in">Logged-In Customer Accounts Only</option>
+                  </select>
+                  <input type="text" id="formCustomerTag" placeholder="Tag: wholesale" style="flex:1;" />
+                </div>
+              </div>
+            </div>
+
+            <div class="form-grid-3">
+              <div class="field" id="fieldMinWrap">
+                <label for="formMinVal" id="labelMinVal">Minimum Required</label>
+                <input type="number" id="formMinVal" step="any" min="0" placeholder="Optional (e.g. 1)" />
+              </div>
+
+              <div class="field" id="fieldMaxWrap">
+                <label for="formMaxVal" id="labelMaxVal">Maximum Allowed</label>
+                <input type="number" id="formMaxVal" step="any" min="0" placeholder="Optional (e.g. 2)" />
+              </div>
+
+              <div class="field" id="fieldStepWrap">
+                <label for="formStepVal">Case Pack Multiple (Step)</label>
+                <input type="number" id="formStepVal" step="1" min="2" placeholder="e.g. 6" value="6" />
+              </div>
+            </div>
+
+            <div class="field" style="margin-bottom:14px;">
+              <label for="formErrorTemplate">Checkout Error Banner Message</label>
+              <input type="text" id="formErrorTemplate" placeholder="Message displayed at checkout when rule is violated..." />
+              <div class="token-bar">
+                <span class="field-hint">Insert dynamic variable:</span>
+                <span class="token-chip" onclick="insertToken('{item_title}')">{item_title}</span>
+                <span class="token-chip" onclick="insertToken('{current}')">{current}</span>
+                <span class="token-chip" onclick="insertToken('{min}')">{min}</span>
+                <span class="token-chip" onclick="insertToken('{max}')">{max}</span>
+                <span class="token-chip" onclick="insertToken('{step}')">{step}</span>
+                <span class="token-chip" onclick="insertToken('{shortfall}')">{shortfall}</span>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+              <button type="button" class="btn" onclick="openNewRuleComposer()">Clear Form</button>
+              <button type="button" class="btn btn--primary" onclick="saveRuleForm()">Save Validation Rule</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- RIGHT COLUMN: Real-Time Checkout Simulator & Metafield Inspector -->
+      <div>
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">Live Checkout Validation Simulator</div>
+              <div class="panel-subtitle">Test how rules block or permit checkout across buyer segments.</div>
+            </div>
+            <button type="button" class="btn btn--sm" id="autoFixCartBtn" onclick="autoFixCartViolations()">
+              Auto-Fix Cart Quantities
+            </button>
+          </div>
+
+          <div class="sim-section">
+            <div class="sim-context-bar">
+              <div class="field">
+                <label for="simBuyerSegment">Simulated Buyer Profile</label>
+                <select id="simBuyerSegment" onchange="runSimulation()">
+                  <option value="retail_guest">Retail Guest Visitor (No Tags)</option>
+                  <option value="b2b_wholesale">B2B Account (tag: wholesale)</option>
+                  <option value="logged_in_vip">Logged-in VIP Member</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="simCheckoutSurface">Payment / Checkout Entry</label>
+                <select id="simCheckoutSurface" onchange="runSimulation()">
+                  <option value="standard_checkout">Standard Shopify Checkout</option>
+                  <option value="shop_pay_express">Shop Pay 1-Click Express</option>
+                  <option value="apple_pay_express">Apple Pay Express Sheet</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="sim-section" id="simCartLinesContainer">
+            <!-- Populated with interactive cart items -->
+          </div>
+
+          <div class="checkout-result" id="simValidationOutput">
+            <!-- Populated with live validation results -->
+          </div>
+        </section>
+
+        <!-- Compiled Shopify Function Metafield JSON Inspector -->
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">Compiled Function Metafield Payload</div>
+              <div class="panel-subtitle">Namespace: <code>$app:cartlogic.validation_rules_v1</code></div>
+            </div>
+            <a class="btn btn--sm" href="/api/export-config" target="_blank" style="text-decoration:none;">Export JSON</a>
+          </div>
+          <pre class="code-box" id="compiledJsonPreview"></pre>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentShop = urlParams.get("shop") || "demo-store.myshopify.com";
+    document.getElementById("shopDomainPill").textContent = "Store: " + currentShop;
+
+    let sessionId = sessionStorage.getItem("cartlogic_session_id");
+    if (!sessionId) {
+      sessionId = "cl_" + Math.random().toString(36).substring(2, 12);
+      sessionStorage.setItem("cartlogic_session_id", sessionId);
+    }
+
+    let appState = {
+      enforcement_enabled: true,
+      rules: [],
+      catalog: { collections: [], products: [] },
+      default_templates: {},
+      cart: []
+    };
+
+    async function apiFetch(path, options = {}) {
+      const headers = Object.assign({}, options.headers || {}, {
+        "Content-Type": "application/json",
+        "X-Demo-Session": sessionId
+      });
+      if (window.shopify && typeof window.shopify.idToken === "function") {
+        try {
+          const token = await window.shopify.idToken();
+          if (token) headers["Authorization"] = "Bearer " + token;
+        } catch (_) {}
+      }
+      return fetch(path, Object.assign({}, options, { headers }));
+    }
+
+    function showToast(msg) {
+      const banner = document.getElementById("toastBanner");
+      document.getElementById("toastMessage").textContent = msg;
+      banner.classList.add("visible");
+    }
+
+    function hideToast() {
+      document.getElementById("toastBanner").classList.remove("visible");
+    }
+
+    async function initApp() {
+      const res = await apiFetch(`/api/bootstrap?shop=${encodeURIComponent(currentShop)}`);
+      const data = await res.json();
+      appState.enforcement_enabled = data.enforcement_enabled;
+      appState.rules = data.rules || [];
+      appState.catalog = data.catalog || { collections: [], products: [] };
+      appState.default_templates = data.default_templates || {};
+
+      // Initialize simulated cart quantities from catalog
+      appState.cart = (appState.catalog.products || []).map(p => ({
+        id: p.id,
+        title: p.title,
+        sku: p.sku,
+        price: p.price,
+        quantity: typeof p.default_cart_qty === "number" ? p.default_cart_qty : 1,
+        collections: p.collections || []
+      }));
+
+      populateTargetSelector();
+      renderEnforcementState();
+      renderRulesTable();
+      renderCartLines();
+      updateJsonPreview(data.compiled_config);
+      openNewRuleComposer();
+      await runSimulation();
+
+      if (urlParams.get("billing") === "confirmed") {
+        showToast("Pro Validation subscription confirmed via Shopify Billing API.");
+      }
+    }
+
+    function populateTargetSelector() {
+      const sel = document.getElementById("formTargetSelect");
+      const opts = [];
+      opts.push(`<option value="all|all|Entire Catalog">Entire Store Catalog / Cart</option>`);
+      (appState.catalog.collections || []).forEach(c => {
+        opts.push(`<option value="collection|${c.id}|${escapeHtml(c.title)}">Collection: ${escapeHtml(c.title)}</option>`);
+      });
+      (appState.catalog.products || []).forEach(p => {
+        opts.push(`<option value="product|${p.id}|${escapeHtml(p.title)}">Product: ${escapeHtml(p.title)} (${escapeHtml(p.sku)})</option>`);
+      });
+      sel.innerHTML = opts.join("");
+    }
+
+    function renderEnforcementState() {
+      const pill = document.getElementById("engineStatusPill");
+      const text = document.getElementById("engineStatusText");
+      const btn = document.getElementById("toggleEnforcementBtn");
+      if (appState.enforcement_enabled) {
+        pill.className = "status-pill status-pill--active";
+        text.textContent = "Enforcement Active";
+        btn.textContent = "Pause Enforcement";
+      } else {
+        pill.className = "status-pill status-pill--paused";
+        text.textContent = "Enforcement Paused";
+        btn.textContent = "Enable Enforcement";
+      }
+      const activeCount = appState.rules.filter(r => r.is_active).length;
+      document.getElementById("kpiActiveCount").textContent = `${activeCount} / ${appState.rules.length}`;
+    }
+
+    function formatConstraintBadge(r) {
+      if (r.rule_type === "step_multiple") {
+        return `Pack Multiple ×${r.step_val || 6}`;
+      }
+      if (r.rule_type === "cart_value") {
+        const minStr = r.min_val ? `Min €${Number(r.min_val).toFixed(0)}` : "";
+        const maxStr = r.max_val ? `Max €${Number(r.max_val).toFixed(0)}` : "";
+        return [minStr, maxStr].filter(Boolean).join(" · ") || "Subtotal Limit";
+      }
+      const minStr = r.min_val ? `Min ${r.min_val}` : "";
+      const maxStr = r.max_val ? `Max ${r.max_val}` : "";
+      return [minStr, maxStr].filter(Boolean).join(" · ") + " units";
+    }
+
+    function formatSegmentBadge(r) {
+      if (r.customer_segment === "b2b_only") {
+        return `<span class="tag tag--b2b">B2B Tag: ${escapeHtml(r.customer_tag || "wholesale")}</span>`;
+      }
+      if (r.customer_segment === "retail_only") {
+        return `<span class="tag tag--retail">Retail Only (Exempt B2B)</span>`;
+      }
+      if (r.customer_segment === "logged_in") {
+        return `<span class="tag">Logged-In Only</span>`;
+      }
+      return `<span class="tag">All Visitors</span>`;
+    }
+
+    function renderRulesTable() {
+      const tbody = document.getElementById("rulesTableBody");
+      if (!appState.rules.length) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">No validation rules configured. Click "+ New Validation Rule" to create one.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = appState.rules.map(r => `
+        <tr>
+          <td>
+            <label class="switch">
+              <input type="checkbox" ${r.is_active ? "checked" : ""} onchange="toggleRule('${r.rule_id}')" />
+              <span class="slider"></span>
+            </label>
+          </td>
+          <td>
+            <span class="rule-name-cell">${escapeHtml(r.name)}</span>
+            <span class="rule-msg-preview" title="${escapeHtml(r.error_template)}">${escapeHtml(r.error_template)}</span>
+          </td>
+          <td>
+            <span class="tag tag--constraint">${escapeHtml(formatConstraintBadge(r))}</span>
+          </td>
+          <td>
+            <span class="tag tag-target" title="${escapeHtml(r.target_title)}">${escapeHtml(r.target_title)}</span>
+          </td>
+          <td>
+            ${formatSegmentBadge(r)}
+          </td>
+          <td style="text-align:right;white-space:nowrap;">
+            <button type="button" class="btn btn--ghost btn--sm" onclick="editRule('${r.rule_id}')">Edit</button>
+            <button type="button" class="btn btn--ghost btn--sm" style="color:var(--critical-text);" onclick="removeRule('${r.rule_id}')">Delete</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function renderCartLines() {
+      const container = document.getElementById("simCartLinesContainer");
+      container.innerHTML = appState.cart.map((item, idx) => `
+        <div class="cart-line">
+          <div class="cart-line-info">
+            <div class="cart-line-title">${escapeHtml(item.title)}</div>
+            <div class="cart-line-meta">SKU: ${escapeHtml(item.sku)} · €${Number(item.price).toFixed(2)} / unit</div>
+          </div>
+          <div class="stepper">
+            <button type="button" onclick="adjustCartQty(${idx}, -1)">-</button>
+            <input type="number" min="0" max="999" value="${item.quantity}" onchange="setCartQty(${idx}, this.value)" />
+            <button type="button" onclick="adjustCartQty(${idx}, 1)">+</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function adjustCartQty(idx, delta) {
+      appState.cart[idx].quantity = Math.max(0, ( parseInt(appState.cart[idx].quantity, 10) || 0 ) + delta);
+      renderCartLines();
+      await runSimulation();
+    }
+
+    async function setCartQty(idx, val) {
+      appState.cart[idx].quantity = Math.max(0, parseInt(val, 10) || 0);
+      renderCartLines();
+      await runSimulation();
+    }
+
+    async function runSimulation() {
+      const profile = document.getElementById("simBuyerSegment").value;
+      const surface = document.getElementById("simCheckoutSurface").value;
+      let is_logged_in = false;
+      let customer_tags = [];
+      if (profile === "b2b_wholesale") {
+        is_logged_in = true;
+        customer_tags = ["wholesale", "b2b"];
+      } else if (profile === "logged_in_vip") {
+        is_logged_in = true;
+        customer_tags = ["vip"];
+      }
+
+      const res = await apiFetch(`/api/simulate?shop=${encodeURIComponent(currentShop)}`, {
+        method: "POST",
+        body: JSON.stringify({
+          items: appState.cart,
+          is_logged_in,
+          customer_tags,
+          checkout_surface: surface
+        })
+      });
+      const result = await res.json();
+      renderSimulationResult(result);
+    }
+
+    function renderSimulationResult(result) {
+      const out = document.getElementById("simValidationOutput");
+      const kpiStatus = document.getElementById("kpiSimStatus");
+      const kpiSub = document.getElementById("kpiSimSubtotal");
+
+      kpiSub.textContent = `Simulated Cart: €${Number(result.cart_subtotal).toFixed(2)} (${result.cart_total_quantity} units)`;
+
+      if (result.checkout_blocked) {
+        const count = result.violations.length;
+        kpiStatus.textContent = `${count} Violation${count > 1 ? "s" : ""} Blocked`;
+        kpiStatus.style.color = "var(--critical-text)";
+
+        out.innerHTML = `
+          <div class="validation-box validation-box--blocked">
+            <div class="validation-header">
+              <span>Checkout Blocked by Shopify Function (${count} error${count > 1 ? "s" : ""})</span>
+              <span class="tag tag--mono" style="background:#fff;">HTTP 200 · REJECT</span>
+            </div>
+            ${result.violations.map(v => `
+              <div class="violation-item">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+                  <strong>${escapeHtml(v.rule_name)}</strong>
+                  <span class="violation-target">${escapeHtml(v.target)}</span>
+                </div>
+                <div>${escapeHtml(v.message)}</div>
+                <div class="violation-remedy">
+                  <span>Fix: ${escapeHtml(v.remediation)}</span>
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        `;
+      } else {
+        kpiStatus.textContent = "Checkout Permitted";
+        kpiStatus.style.color = "var(--success-text)";
+
+        out.innerHTML = `
+          <div class="validation-box validation-box--valid">
+            <div class="validation-header" style="margin-bottom:4px;">
+              <span>All Cart &amp; Checkout Validation Constraints Passed</span>
+              <span class="tag tag--mono" style="background:#fff;">ALLOW</span>
+            </div>
+            <div style="font-size:12px;">
+              Buyer is permitted to complete payment via <strong>${escapeHtml(result.checkout_surface)}</strong> (€${Number(result.cart_subtotal).toFixed(2)}).
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    async function autoFixCartViolations() {
+      // Set valid quantities that satisfy all default/active rules:
+      // Product 501 (Cold brew): 6 units (multiple of 6)
+      // Product 502 (Titanium watch): 2 units (max 2 for retail, or raises subtotal >= 250 for B2B)
+      // Product 503 (Sample kit): 2 units (<= 4 cap)
+      appState.cart.forEach(item => {
+        if (item.sku === "NCB-1000") item.quantity = 6;
+        else if (item.sku === "CHR-TI-01") item.quantity = 2;
+        else if (item.sku === "SMP-ESP-05") item.quantity = 2;
+        else item.quantity = 2;
+      });
+      renderCartLines();
+      await runSimulation();
+      showToast("Simulated cart quantities adjusted to satisfy all active checkout constraints.");
+    }
+
+    function onRuleTypeChange() {
+      const rtype = document.getElementById("formRuleType").value;
+      const minWrap = document.getElementById("fieldMinWrap");
+      const maxWrap = document.getElementById("fieldMaxWrap");
+      const stepWrap = document.getElementById("fieldStepWrap");
+      const labelMin = document.getElementById("labelMinVal");
+      const labelMax = document.getElementById("labelMaxVal");
+
+      if (rtype === "step_multiple") {
+        minWrap.style.display = "none";
+        maxWrap.style.display = "none";
+        stepWrap.style.display = "flex";
+      } else {
+        minWrap.style.display = "flex";
+        maxWrap.style.display = "flex";
+        stepWrap.style.display = "none";
+        if (rtype === "cart_value") {
+          labelMin.textContent = "Minimum Subtotal (€)";
+          labelMax.textContent = "Maximum Subtotal (€)";
+        } else {
+          labelMin.textContent = "Minimum Units";
+          labelMax.textContent = "Maximum Units";
+        }
+      }
+
+      const tplInput = document.getElementById("formErrorTemplate");
+      if (!document.getElementById("formRuleId").value && appState.default_templates[rtype]) {
+        tplInput.value = appState.default_templates[rtype];
+      }
+    }
+
+    function onSegmentChange() {
+      const seg = document.getElementById("formCustomerSegment").value;
+      const tagInput = document.getElementById("formCustomerTag");
+      if (seg === "b2b_only" || seg === "retail_only") {
+        tagInput.style.display = "block";
+        if (!tagInput.value) tagInput.value = "wholesale";
+      } else {
+        tagInput.style.display = "none";
+      }
+    }
+
+    function insertToken(token) {
+      const input = document.getElementById("formErrorTemplate");
+      input.value = (input.value + " " + token).trim();
+      input.focus();
+    }
+
+    function openNewRuleComposer() {
+      document.getElementById("formRuleId").value = "";
+      document.getElementById("composerHeading").textContent = "Create New Validation Rule";
+      document.getElementById("editingRuleIdBadge").textContent = "NEW RULE";
+      document.getElementById("formRuleName").value = "";
+      document.getElementById("formRuleType").value = "step_multiple";
+      document.getElementById("formCustomerSegment").value = "all";
+      document.getElementById("formCustomerTag").value = "";
+      document.getElementById("formMinVal").value = "";
+      document.getElementById("formMaxVal").value = "";
+      document.getElementById("formStepVal").value = "6";
+      onRuleTypeChange();
+      onSegmentChange();
+    }
+
+    function editRule(ruleId) {
+      const r = appState.rules.find(x => x.rule_id === ruleId);
+      if (!r) return;
+      document.getElementById("formRuleId").value = r.rule_id;
+      document.getElementById("composerHeading").textContent = "Edit Validation Rule";
+      document.getElementById("editingRuleIdBadge").textContent = r.rule_id;
+      document.getElementById("formRuleName").value = r.name;
+      document.getElementById("formRuleType").value = r.rule_type;
+      document.getElementById("formCustomerSegment").value = r.customer_segment || "all";
+      document.getElementById("formCustomerTag").value = r.customer_tag || "";
+      document.getElementById("formMinVal").value = r.min_val !== null && r.min_val !== undefined ? r.min_val : "";
+      document.getElementById("formMaxVal").value = r.max_val !== null && r.max_val !== undefined ? r.max_val : "";
+      document.getElementById("formStepVal").value = r.step_val || 6;
+      document.getElementById("formErrorTemplate").value = r.error_template || "";
+
+      const sel = document.getElementById("formTargetSelect");
+      for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value.startsWith(`${r.target_type}|${r.target_id}|`)) {
+          sel.selectedIndex = i;
+          break;
+        }
+      }
+      onRuleTypeChange();
+      onSegmentChange();
+    }
+
+    async function saveRuleForm() {
+      const rule_id = document.getElementById("formRuleId").value || null;
+      const name = document.getElementById("formRuleName").value.trim() || "Custom Checkout Limit";
+      const rule_type = document.getElementById("formRuleType").value;
+      const targetRaw = document.getElementById("formTargetSelect").value.split("|");
+      const target_type = targetRaw[0] || "all";
+      const target_id = targetRaw[1] || "all";
+      const target_title = targetRaw[2] || "Entire Catalog";
+      const customer_segment = document.getElementById("formCustomerSegment").value;
+      const customer_tag = document.getElementById("formCustomerTag").value.trim();
+      const minRaw = document.getElementById("formMinVal").value;
+      const maxRaw = document.getElementById("formMaxVal").value;
+      const stepRaw = document.getElementById("formStepVal").value;
+      const error_template = document.getElementById("formErrorTemplate").value.trim();
+
+      const payload = {
+        rule_id,
+        name,
+        rule_type,
+        target_type,
+        target_id,
+        target_title,
+        customer_segment,
+        customer_tag,
+        min_val: minRaw !== "" ? parseFloat(minRaw) : null,
+        max_val: maxRaw !== "" ? parseFloat(maxRaw) : null,
+        step_val: stepRaw !== "" ? parseInt(stepRaw, 10) : null,
+        error_template,
+        is_active: true,
+        priority: 5
+      };
+
+      const res = await apiFetch(`/api/rules?shop=${encodeURIComponent(currentShop)}`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      appState.rules = data.rules;
+      renderEnforcementState();
+      renderRulesTable();
+      updateJsonPreview(data.compiled_config);
+      await runSimulation();
+      openNewRuleComposer();
+      showToast(`Validation rule "${name}" saved and compiled.`);
+    }
+
+    async function toggleRule(ruleId) {
+      const res = await apiFetch(`/api/rules/${encodeURIComponent(ruleId)}/toggle?shop=${encodeURIComponent(currentShop)}`, {
+        method: "POST"
+      });
+      const data = await res.json();
+      appState.rules = data.rules;
+      renderEnforcementState();
+      renderRulesTable();
+      updateJsonPreview(data.compiled_config);
+      await runSimulation();
+    }
+
+    async function removeRule(ruleId) {
+      const res = await apiFetch(`/api/rules/${encodeURIComponent(ruleId)}?shop=${encodeURIComponent(currentShop)}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      appState.rules = data.rules;
+      renderEnforcementState();
+      renderRulesTable();
+      updateJsonPreview(data.compiled_config);
+      await runSimulation();
+      showToast("Validation rule removed.");
+    }
+
+    async function toggleGlobalEnforcement() {
+      const nextState = !appState.enforcement_enabled;
+      const res = await apiFetch(`/api/enforcement?shop=${encodeURIComponent(currentShop)}`, {
+        method: "POST",
+        body: JSON.stringify({ enabled: nextState })
+      });
+      const data = await res.json();
+      appState.enforcement_enabled = data.enforcement_enabled;
+      renderEnforcementState();
+      updateJsonPreview(data.compiled_config);
+      await runSimulation();
+      showToast(nextState ? "Checkout validation enforcement enabled." : "Checkout validation enforcement paused.");
+    }
+
+    async function syncToShopifyCheckout() {
+      const btn = document.getElementById("syncCheckoutBtn");
+      btn.disabled = true;
+      try {
+        const res = await apiFetch(`/api/sync-checkout?shop=${encodeURIComponent(currentShop)}`, {
+          method: "POST"
+        });
+        const data = await res.json();
+        updateJsonPreview(data.compiled_config);
+        showToast(`Synchronized ${data.compiled_config.active_rules_count} active validation rules to Shopify Function Metafield.`);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function resetDefaultRules() {
+      const res = await apiFetch(`/api/reset-defaults?shop=${encodeURIComponent(currentShop)}`, {
+        method: "POST"
+      });
+      const data = await res.json();
+      appState.enforcement_enabled = data.enforcement_enabled;
+      appState.rules = data.rules;
+      renderEnforcementState();
+      renderRulesTable();
+      updateJsonPreview(data.compiled_config);
+      await runSimulation();
+      showToast("Default enterprise validation rules restored.");
+    }
+
+    async function activateProSubscription() {
+      const btn = document.getElementById("proPlanBtn");
+      btn.disabled = true;
+      try {
+        const res = await apiFetch(`/api/billing/subscribe?shop=${encodeURIComponent(currentShop)}`, {
+          method: "POST"
+        });
+        const data = await res.json();
+        if (data.status === "redirect" && data.confirmation_url) {
+          if (window.top !== window.self) {
+            window.top.location.href = data.confirmation_url;
+          } else {
+            window.location.href = data.confirmation_url;
+          }
+          return;
+        }
+        showToast("Pro Validation Plan active (14-day free trial via Shopify Billing API).");
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function updateJsonPreview(configObj) {
+      document.getElementById("compiledJsonPreview").textContent = JSON.stringify(configObj, null, 2);
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    initApp();
+  </script>
+</body>
+</html>
