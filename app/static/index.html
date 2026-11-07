@@ -999,16 +999,30 @@
           </div>
         </section>
 
-        <!-- Compiled Shopify Function Metafield JSON Inspector -->
+        <!-- Merchant-Friendly Checkout Protection Status Card -->
         <section class="panel">
           <div class="panel-header">
             <div>
-              <div class="panel-title">Compiled Function Metafield Payload</div>
-              <div class="panel-subtitle">Namespace: <code>$app:cartlogic.validation_rules_v1</code></div>
+              <div class="panel-title">Checkout Protection &amp; Automatic Installation</div>
+              <div class="panel-subtitle">Zero theme code required — rules run directly on Shopify Checkout servers.</div>
             </div>
-            <a class="btn btn--sm" href="/api/export-config" target="_blank" style="text-decoration:none;">Export JSON</a>
+            <a class="btn btn--sm" href="/api/export-config" target="_blank" style="text-decoration:none;">Download Backup</a>
           </div>
-          <pre class="code-box" id="compiledJsonPreview"></pre>
+          <div style="padding:12px 16px;font-size:12px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--bg-subdued);border:1px solid var(--border-base);border-radius:6px;">
+              <span><strong>Standard Cart &amp; Checkout</strong> — Blocks invalid quantities before payment</span>
+              <span class="status-pill status-pill--active" style="padding:2px 8px;font-size:11px;">Protected</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--bg-subdued);border:1px solid var(--border-base);border-radius:6px;">
+              <span><strong>Express 1-Click Buttons</strong> — Shop Pay, Apple Pay, Google Pay, PayPal</span>
+              <span class="status-pill status-pill--active" style="padding:2px 8px;font-size:11px;">Protected</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--bg-subdued);border:1px solid var(--border-base);border-radius:6px;">
+              <span><strong>Theme Speed Impact</strong> — 0 KB added to storefront JavaScript</span>
+              <span class="tag" style="font-size:11px;">100% Native</span>
+            </div>
+            <pre class="code-box" id="compiledJsonPreview" style="display:none;"></pre>
+          </div>
         </section>
       </div>
     </div>
