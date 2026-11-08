@@ -20,13 +20,14 @@
   5. `Blocks express payment bypasses across Shop Pay and Apple Pay flows`
 
 ## 3. Media & Alt Texts (1600x900 px, Zero pricing text, Alt text <= 64 chars)
-1. `screenshot_1_validation_rules.png` (Used as Feature Image & Screenshot 1)
-   - **Feature Image Alt text (52 chars):** `CartLogic validation rules table and checkout limits`
-   - **Screenshot 1 Alt text (54 chars):** `Validation rules table and live checkout blocked alert`
-2. `screenshot_2_checkout_allowed.png`
-   - **Screenshot 2 Alt text (54 chars):** `Simulated cart with allowed checkout status and limits`
-3. `screenshot_3_b2b_segment.png`
-   - **Screenshot 3 Alt text (52 chars):** `B2B wholesale customer rules and protection settings`
+1. **Feature Image (Главный баннер):** `cartlogic_feature_1600x900.png`
+   - **Alt text (52 chars):** `CartLogic validation rules table and checkout limits`
+2. **Desktop Screenshot 1:** `screenshot_1_validation_rules.png`
+   - **Alt text (54 chars):** `Validation rules table and live checkout blocked alert`
+3. **Desktop Screenshot 2:** `screenshot_2_checkout_allowed.png`
+   - **Alt text (54 chars):** `Simulated cart with allowed checkout status and limits`
+4. **Desktop Screenshot 3:** `screenshot_3_b2b_segment.png`
+   - **Alt text (52 chars):** `B2B wholesale customer rules and protection settings`
 
 ## 4. Pricing Plan Details
 - **Plan Name:** `Pro Validation` ($14.99 / month, 14-day free trial)
