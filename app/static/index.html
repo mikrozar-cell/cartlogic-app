@@ -6,19 +6,14 @@
   <meta name="shopify-api-key" content="__SHOPIFY_API_KEY__" />
   <title>CartLogic — Order &amp; Quantity Limits</title>
   <script>
-    // Ensure default shop query parameter if app is opened directly in browser tab outside Shopify admin
-    (function() {
-      try {
-        var params = new URLSearchParams(window.location.search);
-        if (!params.get("shop")) {
-          params.set("shop", "demo-store.myshopify.com");
-          var newUrl = window.location.pathname + "?" + params.toString() + window.location.hash;
-          window.history.replaceState(null, "", newUrl);
-        }
-      } catch (e) {}
-    })();
+    // Only load Shopify App Bridge when running inside Shopify Admin iframe.
+    // Prevents unwanted top-level redirect to admin.shopify.com when viewing standalone app or recording screencast.
+    if (window.top !== window.self) {
+      var ab = document.createElement("script");
+      ab.src = "https://cdn.shopify.com/shopifycloud/app-bridge.js";
+      document.head.appendChild(ab);
+    }
   </script>
-  <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
   <style>
     :root {
       --bg-page: #f1f2f4;
