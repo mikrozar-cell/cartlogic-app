@@ -932,15 +932,15 @@
 
             <div class="field" style="margin-bottom:14px;">
               <label for="formErrorTemplate">Checkout Error Banner Message</label>
-              <input type="text" id="formErrorTemplate" oninput="updateLiveErrorPreview()" placeholder="Message displayed at checkout when rule is violated..." />
+              <input type="text" id="formErrorTemplate" oninput="updateLiveErrorPreview(); trackTemplateSelection();" onclick="trackTemplateSelection();" onkeyup="trackTemplateSelection();" onselect="trackTemplateSelection();" placeholder="Message displayed at checkout when rule is violated..." />
               <div class="token-bar">
                 <span class="field-hint">Click to insert auto-filled value:</span>
-                <span class="token-chip" onclick="insertToken('{item_title}')">+ Product Name <code>{item_title}</code></span>
-                <span class="token-chip" onclick="insertToken('{current}')">+ Customer's Cart Qty <code>{current}</code></span>
-                <span class="token-chip" onclick="insertToken('{min}')">+ Min Limit <code>{min}</code></span>
-                <span class="token-chip" onclick="insertToken('{max}')">+ Max Limit <code>{max}</code></span>
-                <span class="token-chip" onclick="insertToken('{step}')">+ Pack Size <code>{step}</code></span>
-                <span class="token-chip" onclick="insertToken('{shortfall}')">+ Missing Amount <code>{shortfall}</code></span>
+                <span class="token-chip" onmousedown="event.preventDefault()" onclick="insertToken('{item_title}')">+ Product Name <code>{item_title}</code></span>
+                <span class="token-chip" onmousedown="event.preventDefault()" onclick="insertToken('{current}')">+ Customer's Cart Qty <code>{current}</code></span>
+                <span class="token-chip" onmousedown="event.preventDefault()" onclick="insertToken('{min}')">+ Min Limit <code>{min}</code></span>
+                <span class="token-chip" onmousedown="event.preventDefault()" onclick="insertToken('{max}')">+ Max Limit <code>{max}</code></span>
+                <span class="token-chip" onmousedown="event.preventDefault()" onclick="insertToken('{step}')">+ Pack Size <code>{step}</code></span>
+                <span class="token-chip" onmousedown="event.preventDefault()" onclick="insertToken('{shortfall}')">+ Missing Amount <code>{shortfall}</code></span>
               </div>
               <div class="live-msg-preview">
                 <strong>Customer Checkout Preview:</strong> <span id="liveErrorPreviewText"></span>
@@ -1407,10 +1407,51 @@
       }
     }
 
+    let lastTemplateSelection = { start: null, end: null };
+
+    function trackTemplateSelection() {
+      const input = document.getElementById("formErrorTemplate");
+      if (input) {
+        lastTemplateSelection.start = input.selectionStart;
+        lastTemplateSelection.end = input.selectionEnd;
+      }
+    }
+
     function insertToken(token) {
       const input = document.getElementById("formErrorTemplate");
-      input.value = (input.value + " " + token).trim();
+      if (!input) return;
+
+      const val = input.value || "";
+      let start = (lastTemplateSelection.start !== null && lastTemplateSelection.start !== undefined)
+        ? lastTemplateSelection.start
+        : (input.selectionStart !== null && input.selectionStart !== undefined ? input.selectionStart : val.length);
+      let end = (lastTemplateSelection.end !== null && lastTemplateSelection.end !== undefined)
+        ? lastTemplateSelection.end
+        : (input.selectionEnd !== null && input.selectionEnd !== undefined ? input.selectionEnd : val.length);
+
+      // Clamp indices within bounds
+      start = Math.max(0, Math.min(start, val.length));
+      end = Math.max(start, Math.min(end, val.length));
+
+      const before = val.substring(0, start);
+      const after = val.substring(end);
+
+      // Add a clean space around token if inserted between words without spaces
+      let insertVal = token;
+      if (before.length > 0 && !before.endsWith(" ") && !before.endsWith("(")) {
+        insertVal = " " + insertVal;
+      }
+      if (after.length > 0 && !after.startsWith(" ") && !after.startsWith(".") && !after.startsWith(",") && !after.startsWith(")")) {
+        insertVal = insertVal + " ";
+      }
+
+      input.value = before + insertVal + after;
+      const newPos = start + insertVal.length;
+      lastTemplateSelection.start = newPos;
+      lastTemplateSelection.end = newPos;
+
       input.focus();
+      input.setSelectionRange(newPos, newPos);
       updateLiveErrorPreview();
     }
 
