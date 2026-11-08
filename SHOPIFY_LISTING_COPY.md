@@ -39,7 +39,7 @@
 
 ## 5. Discovery & Search
 - **App Card Subtitle (58 / 62 chars):**
-  `Min-max order quantities, case pack multiples & B2B limits`
+  `Set order quantity limits and case pack rules at checkout.`
 - **Search Terms (5):**
   1. `order limits`
   2. `quantity limit`
