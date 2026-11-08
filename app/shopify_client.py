@@ -147,7 +147,7 @@ class ShopifyGraphQLClient:
         self,
         return_url: str,
         plan_name: str = "Pro Validation",
-        price_usd: float = 14.99,
+        price_usd: float = 9.99,
         trial_days: int = 14,
         test_mode: bool = True,
     ) -> Dict[str, Any]:

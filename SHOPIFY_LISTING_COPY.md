@@ -30,7 +30,7 @@
    - **Alt text (52 chars):** `B2B wholesale customer rules and protection settings`
 
 ## 4. Pricing Plan Details
-- **Plan Name:** `Pro Validation` ($14.99 / month, 14-day free trial)
+- **Plan Name:** `Pro Validation` ($9.99 / month, 14-day free trial)
 - **4 Top Features (Strictly <= 40 chars each):**
   1. `Unlimited checkout validation rules` (35 chars)
   2. `Case pack step multiple enforcement` (35 chars)

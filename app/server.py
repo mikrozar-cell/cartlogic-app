@@ -656,7 +656,7 @@ async def api_billing_subscribe(
         res = await client.create_subscription(
             return_url=return_url,
             plan_name="Pro Validation",
-            price_usd=14.99,
+            price_usd=9.99,
             trial_days=14,
             test_mode=True,
         )
