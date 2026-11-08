@@ -1,4 +1,5 @@
 # CartLogic — Order & Quantity Limits (Shopify App Configuration)
+client_id = "21dd49d16f61ca3776c623349af8d6aa"
 name = "CartLogic Order & Quantity Limits"
 application_url = "https://cartlogic-app.onrender.com"
 embedded = true

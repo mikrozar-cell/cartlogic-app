@@ -7,5 +7,6 @@ video_temp/
 .shopify/
 *.png
 *.webm
+!app/static/demo.webm
 
 
