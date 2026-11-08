@@ -706,6 +706,11 @@ async def screencast_video():
 # ---------------------------------------------------------------------------
 # Public Health, Privacy Policy & Support Endpoints
 # ---------------------------------------------------------------------------
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> PlainTextResponse:
+    return PlainTextResponse("", status_code=204)
+
+
 @app.get("/health")
 async def health_check() -> Dict[str, str]:
     return {"status": "healthy", "service": "CartLogic — Order & Quantity Limits"}

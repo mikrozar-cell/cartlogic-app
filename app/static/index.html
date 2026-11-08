@@ -5,6 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="shopify-api-key" content="__SHOPIFY_API_KEY__" />
   <title>CartLogic — Order &amp; Quantity Limits</title>
+  <script>
+    // Ensure default shop query parameter if app is opened directly in browser tab outside Shopify admin
+    (function() {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        if (!params.get("shop")) {
+          params.set("shop", "demo-store.myshopify.com");
+          var newUrl = window.location.pathname + "?" + params.toString() + window.location.hash;
+          window.history.replaceState(null, "", newUrl);
+        }
+      } catch (e) {}
+    })();
+  </script>
   <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
   <style>
     :root {
