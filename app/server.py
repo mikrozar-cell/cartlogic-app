@@ -230,6 +230,73 @@ def is_live_shopify_session(shop: str) -> Optional[Dict[str, Any]]:
     return row
 
 
+def _extract_bearer_token(request: Optional[Request], id_token_param: Optional[str] = None) -> Optional[str]:
+    if request is not None:
+        auth_header = request.headers.get("authorization") or request.headers.get("Authorization") or ""
+        if auth_header.lower().startswith("bearer "):
+            tok = auth_header[7:].strip()
+            if tok:
+                return tok
+        q_tok = request.query_params.get("id_token")
+        if q_tok:
+            return q_tok.strip()
+    if id_token_param:
+        return id_token_param.strip()
+    return None
+
+
+async def resolve_shop_session(
+    shop: str,
+    request: Optional[Request] = None,
+    id_token_param: Optional[str] = None,
+    force_refresh: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """
+    Resolves a store's offline access token from SQLite or exchanges the Shopify App Bridge
+    session token (id_token) via Shopify Managed Installation OAuth 2.0 Token Exchange
+    (urn:ietf:params:oauth:grant-type:token-exchange).
+    """
+    clean_shop = (shop or DEMO_SHOP).strip().lower()
+    if not clean_shop or clean_shop == DEMO_SHOP or not clean_shop.endswith(".myshopify.com"):
+        return None
+
+    existing = get_shop(clean_shop)
+    if existing and existing.get("access_token") and not force_refresh:
+        return existing
+
+    session_jwt = _extract_bearer_token(request, id_token_param)
+    if session_jwt and SHOPIFY_API_KEY and SHOPIFY_API_SECRET:
+        token_url = f"https://{clean_shop}/admin/oauth/access_token"
+        for requested_type in (
+            "urn:shopify:params:oauth:token-type:offline-access-token",
+            "urn:shopify:params:oauth:token-type:online-access-token",
+        ):
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.post(
+                        token_url,
+                        json={
+                            "client_id": SHOPIFY_API_KEY,
+                            "client_secret": SHOPIFY_API_SECRET,
+                            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+                            "subject_token": session_jwt,
+                            "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+                            "requested_token_type": requested_type,
+                        },
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        access_token = data.get("access_token", "")
+                        if access_token:
+                            upsert_shop(clean_shop, access_token, data.get("scope", SCOPES))
+                            return get_shop(clean_shop)
+            except Exception:
+                pass
+
+    return existing
+
+
+
 # ---------------------------------------------------------------------------
 # HMAC & Webhook Verification
 # ---------------------------------------------------------------------------
@@ -263,23 +330,13 @@ def verify_oauth_query_hmac(query_params: Dict[str, str]) -> bool:
 # Root Embedded UI & OAuth Flows
 # ---------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-async def root_ui(request: Request, shop: Optional[str] = Query(default=None)) -> HTMLResponse:
+async def root_ui(
+    request: Request,
+    shop: Optional[str] = Query(default=None),
+    id_token: Optional[str] = Query(default=None),
+) -> HTMLResponse:
     if shop and shop.endswith(".myshopify.com") and shop != DEMO_SHOP:
-        shop_data = get_shop(shop)
-        if not shop_data or not shop_data.get("access_token"):
-            auth_url = f"/auth?shop={urllib.parse.quote(shop)}"
-            return HTMLResponse(
-                f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<script>
-  var target = "{auth_url}";
-  if (window.top !== window.self) {{ window.top.location.href = target; }}
-  else {{ window.location.href = target; }}
-</script></head>
-<body style="font-family:Inter,-apple-system,sans-serif;padding:40px;color:#1a1a1a;">
-  Connecting CartLogic with Shopify Admin...
-</body></html>"""
-            )
+        await resolve_shop_session(shop, request=request, id_token_param=id_token)
     static_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
     with open(static_path, "r", encoding="utf-8") as f:
         html = f.read()
@@ -376,6 +433,7 @@ class SimulationInput(BaseModel):
 
 @app.get("/api/bootstrap")
 async def api_bootstrap(
+    request: Request,
     shop: str = Query(default=DEMO_SHOP),
     x_demo_session: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
@@ -386,6 +444,7 @@ async def api_bootstrap(
 
     catalog = copy.deepcopy(DEFAULT_CATALOG)
     mode = "sandbox"
+    await resolve_shop_session(clean_shop, request=request)
     live_session = is_live_shopify_session(clean_shop)
     if live_session:
         try:
@@ -395,7 +454,18 @@ async def api_bootstrap(
                 catalog = live_cat
             mode = "live_shopify"
         except Exception:
-            mode = "sandbox"
+            refreshed = await resolve_shop_session(clean_shop, request=request, force_refresh=True)
+            if refreshed and refreshed.get("access_token") and not str(refreshed["access_token"]).startswith("fake_"):
+                try:
+                    client = ShopifyGraphQLClient(clean_shop, refreshed["access_token"])
+                    live_cat = await client.fetch_catalog_targets(limit=30)
+                    if live_cat["products"] or live_cat["collections"]:
+                        catalog = live_cat
+                    mode = "live_shopify"
+                except Exception:
+                    mode = "sandbox"
+            else:
+                mode = "sandbox"
 
     compiled = compile_shopify_function_config(clean_shop, rules, enforcement)
     logs = get_audit_logs(session_key, limit=20)
@@ -567,6 +637,7 @@ async def api_simulate_checkout(
 
 @app.post("/api/sync-checkout")
 async def api_sync_to_shopify(
+    request: Request,
     shop: str = Query(default=DEMO_SHOP),
     x_demo_session: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
@@ -576,6 +647,7 @@ async def api_sync_to_shopify(
     enforcement = get_shop_enforcement(session_key)
     compiled = compile_shopify_function_config(clean_shop, rules, enforcement)
 
+    await resolve_shop_session(clean_shop, request=request)
     live_session = is_live_shopify_session(clean_shop)
     sync_mode = "sandbox_metafield"
     if live_session:
@@ -646,23 +718,35 @@ async def api_export_config(
 
 @app.post("/api/billing/subscribe")
 async def api_billing_subscribe(
+    request: Request,
     shop: str = Query(default=DEMO_SHOP),
 ) -> Dict[str, Any]:
     clean_shop = (shop or DEMO_SHOP).strip().lower()
+    await resolve_shop_session(clean_shop, request=request)
     live_session = is_live_shopify_session(clean_shop)
     return_url = f"{APP_URL}/?shop={urllib.parse.quote(clean_shop)}&billing=confirmed"
     if live_session:
-        client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
-        res = await client.create_subscription(
-            return_url=return_url,
-            plan_name="Pro Validation",
-            price_usd=9.99,
-            trial_days=14,
-            test_mode=True,
-        )
-        sub_data = res.get("appSubscriptionCreate") or {}
-        if sub_data.get("confirmationUrl"):
-            return {"status": "redirect", "confirmation_url": sub_data["confirmationUrl"]}
+        for attempt in range(2):
+            try:
+                client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
+                res = await client.create_subscription(
+                    return_url=return_url,
+                    plan_name="Pro Validation",
+                    price_usd=9.99,
+                    trial_days=14,
+                    test_mode=True,
+                )
+                sub_data = res.get("appSubscriptionCreate") or {}
+                if sub_data.get("confirmationUrl"):
+                    return {"status": "redirect", "confirmation_url": sub_data["confirmationUrl"]}
+                break
+            except Exception:
+                if attempt == 0:
+                    refreshed = await resolve_shop_session(clean_shop, request=request, force_refresh=True)
+                    if refreshed and refreshed.get("access_token") and not str(refreshed["access_token"]).startswith("fake_"):
+                        live_session = refreshed
+                        continue
+                break
     return {"status": "active_sandbox", "plan": "Pro Validation Plan Activated"}
 
 
