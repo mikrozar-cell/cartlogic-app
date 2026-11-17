@@ -15,7 +15,8 @@ _TEMP_DB = tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False)
 _TEMP_DB.close()
 os.environ["CARTLIMITS_DB_PATH"] = _TEMP_DB.name
 
-from app.database import init_db
+from unittest.mock import AsyncMock, patch
+from app.database import init_db, upsert_shop
 from app.server import app, SHOPIFY_API_SECRET
 from app.validation_engine import (
     compile_shopify_function_config,
@@ -245,3 +246,29 @@ def test_gdpr_webhook_hmac_verification():
     )
     assert r_ok.status_code == 200
     assert r_ok.json()["status"] == "ok"
+
+
+def test_billing_upgrade_and_downgrade():
+    live_shop = "live-review-cl.myshopify.com"
+    upsert_shop(live_shop, "shpat_mock_cl_token", "read_products,write_products")
+
+    with (
+        patch("app.shopify_client.ShopifyGraphQLClient.create_subscription", new=AsyncMock(side_effect=RuntimeError("Managed Pricing Apps cannot use the Billing API"))),
+        patch("app.shopify_client.ShopifyGraphQLClient.cancel_active_subscriptions", new=AsyncMock(return_value=[])),
+        patch("app.shopify_client.ShopifyGraphQLClient.get_billing_info", new=AsyncMock(return_value={"app_handle": "cartlogic-order-limits", "active_subscriptions": []})),
+    ):
+        r_sub = client.post(f"/api/billing/subscribe?shop={live_shop}&plan=pro")
+        assert r_sub.status_code == 200
+        assert r_sub.json()["plan"] == "pro"
+
+        r_down = client.post(f"/api/billing/downgrade?shop={live_shop}")
+        assert r_down.status_code == 200
+        assert r_down.json()["plan"] == "free"
+
+        r_st = client.get(f"/api/billing/status?shop={live_shop}")
+        assert r_st.status_code == 200
+        assert r_st.json()["plan"] == "free"
+
+        r_reup = client.post(f"/api/billing/subscribe?shop={live_shop}&plan=pro")
+        assert r_reup.status_code == 200
+        assert r_reup.json()["plan"] == "pro"

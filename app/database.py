@@ -98,6 +98,33 @@ def get_shop(shop_domain: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
+def set_shop_plan(shop_domain: str, plan_name: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    clean_shop = (shop_domain or "").lower().strip()
+    if not clean_shop:
+        return
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO shops (shop_domain, access_token, scope, plan_name, installed_at, updated_at)
+            VALUES (?, '', 'read_products,write_products', ?, ?, ?)
+            ON CONFLICT(shop_domain) DO UPDATE SET
+                plan_name = excluded.plan_name,
+                updated_at = excluded.updated_at
+            """,
+            (clean_shop, plan_name, now, now),
+        )
+        conn.commit()
+
+
+def get_shop_plan(shop_domain: str) -> str:
+    row = get_shop(shop_domain)
+    if not row:
+        return "pro"
+    val = (row.get("plan_name") or "pro").strip().lower()
+    return "free" if val == "free" else "pro"
+
+
 def set_shop_enforcement(shop_domain: str, enabled: bool) -> None:
     now = datetime.now(timezone.utc).isoformat()
     with get_connection() as conn:

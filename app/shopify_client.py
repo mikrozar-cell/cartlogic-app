@@ -143,6 +143,31 @@ class ShopifyGraphQLClient:
         }
         return await self.execute(mutation, variables)
 
+    async def get_billing_info(self) -> Dict[str, Any]:
+        query = """
+        query GetBillingInfo {
+          currentAppInstallation {
+            app {
+              handle
+            }
+            activeSubscriptions {
+              id
+              name
+              status
+              test
+              trialDays
+            }
+          }
+        }
+        """
+        data = await self.execute(query)
+        inst = data.get("currentAppInstallation") or {}
+        app_info = inst.get("app") or {}
+        return {
+            "app_handle": app_info.get("handle") or "",
+            "active_subscriptions": inst.get("activeSubscriptions") or [],
+        }
+
     async def create_subscription(
         self,
         return_url: str,
@@ -164,6 +189,7 @@ class ShopifyGraphQLClient:
             returnUrl: $returnUrl,
             trialDays: $trialDays,
             test: $test,
+            replacementBehavior: APPLY_IMMEDIATELY,
             lineItems: [
               {
                 plan: {
@@ -197,4 +223,32 @@ class ShopifyGraphQLClient:
                 "amount": str(price_usd),
             },
         )
+
+    async def cancel_active_subscriptions(self) -> List[str]:
+        info = await self.get_billing_info()
+        cancelled_ids: List[str] = []
+        mutation = """
+        mutation AppSubscriptionCancel($id: ID!) {
+          appSubscriptionCancel(id: $id) {
+            appSubscription {
+              id
+              status
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        """
+        for sub in info.get("active_subscriptions") or []:
+            sub_id = sub.get("id")
+            if not sub_id:
+                continue
+            try:
+                await self.execute(mutation, {"id": sub_id})
+                cancelled_ids.append(sub_id)
+            except Exception:
+                continue
+        return cancelled_ids
 

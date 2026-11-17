@@ -752,6 +752,60 @@
       stroke-linejoin: round;
       flex-shrink: 0;
     }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(26, 26, 26, 0.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9000;
+      padding: 20px;
+    }
+    .modal-backdrop.is-open {
+      display: flex;
+    }
+    .modal-card {
+      background: var(--bg-surface);
+      border-radius: var(--radius-lg);
+      max-width: 720px;
+      width: 100%;
+      box-shadow: 0 20px 44px rgba(0, 0, 0, 0.24);
+      overflow: hidden;
+      border: 1px solid var(--border-base);
+    }
+    .modal-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-subdued);
+    }
+    .modal-body {
+      padding: 18px;
+    }
+    .plans-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin-top: 12px;
+    }
+    .plan-box {
+      border: 1.5px solid var(--border-base);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 12px;
+      background: #fff;
+    }
+    .plan-box.is-active {
+      border-color: var(--success-dot);
+      background: #f5fbf8;
+    }
   </style>
 </head>
 <body>
@@ -775,8 +829,11 @@
       <button type="button" class="btn btn--sm" id="toggleEnforcementBtn" onclick="toggleGlobalEnforcement()">
         Pause Enforcement
       </button>
-      <button type="button" class="btn btn--sm" id="proPlanBtn" onclick="activateProSubscription()">
-        Pro Plan Active
+      <button type="button" class="btn btn--sm" id="proPlanBtn" onclick="openBillingModal()">
+        Pro Plan ($9.99/mo)
+      </button>
+      <button type="button" class="btn btn--sm" onclick="openBillingModal()">
+        Change Plan
       </button>
       <button type="button" class="btn btn--primary btn--sm" id="syncCheckoutBtn" onclick="syncToShopifyCheckout()">
         <svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
@@ -1036,6 +1093,56 @@
     </div>
   </main>
 
+  <div id="billingModal" class="modal-backdrop" onclick="if (event.target === this) closeBillingModal()">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <strong style="font-size:15px;">Plans &amp; Billing — Self-Service Upgrade or Downgrade</strong>
+          <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Switch plans anytime without contacting support or reinstalling.</div>
+        </div>
+        <button type="button" class="btn btn--sm" onclick="closeBillingModal()">&#10005; Close</button>
+      </div>
+      <div class="modal-body">
+        <div id="billingModalStatus" style="font-size:12.5px;color:var(--text-secondary);"></div>
+        <div class="plans-grid">
+          <div id="planCardFree" class="plan-box">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <strong>Free Starter</strong>
+                <span id="planBadgeFree" class="tag" style="display:none;">Current Plan</span>
+              </div>
+              <div style="font-size:21px;font-weight:700;margin:6px 0;">$0 <span style="font-size:12px;font-weight:500;color:var(--text-secondary);">/ month</span></div>
+              <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">
+                &#10003; Up to 2 checkout validation rules<br/>
+                &#10003; Live cart &amp; checkout simulator<br/>
+                &#10003; 1-Click express checkout protection
+              </div>
+            </div>
+            <button type="button" id="btnSelectFree" class="btn" onclick="downgradeToFreePlan()">Switch to Free ($0/mo)</button>
+          </div>
+          <div id="planCardPro" class="plan-box is-active">
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <strong>Pro Validation</strong>
+                <span id="planBadgePro" class="status-pill status-pill--active" style="padding:2px 8px;font-size:11px;">Current Plan</span>
+              </div>
+              <div style="font-size:21px;font-weight:700;margin:6px 0;">$9.99 <span style="font-size:12px;font-weight:500;color:var(--text-secondary);">/ month · 14-day free trial</span></div>
+              <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">
+                &#10003; Unlimited checkout &amp; quantity rules<br/>
+                &#10003; B2B vs. Retail customer segment targeting<br/>
+                &#10003; Shopify Functions Metafield edge sync
+              </div>
+            </div>
+            <button type="button" id="btnSelectPro" class="btn btn--primary" onclick="activateProSubscription()">Upgrade to Pro ($9.99/mo)</button>
+          </div>
+        </div>
+        <div id="managedPricingLinkWrap" style="margin-top:12px;font-size:12px;display:none;">
+          <a id="managedPricingLink" href="#" target="_top" style="color:var(--info-text);font-weight:600;">Open Shopify Hosted Plan Management &rarr;</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const urlParams = new URLSearchParams(window.location.search);
     function resolveShopDomain() {
@@ -1122,11 +1229,16 @@
 
     async function initApp() {
       const res = await apiFetch(`/api/bootstrap?shop=${encodeURIComponent(currentShop)}`);
+      if (!res.ok) {
+        showToast("Unable to load rules right now. Please refresh.");
+        return;
+      }
       const data = await res.json();
       appState.enforcement_enabled = data.enforcement_enabled;
       appState.rules = data.rules || [];
       appState.catalog = data.catalog || { collections: [], products: [] };
       appState.default_templates = data.default_templates || {};
+      if (data.plan) renderPlanUI(data.plan);
 
       // Initialize simulated cart quantities from catalog
       appState.cart = (appState.catalog.products || []).map(p => ({
@@ -1147,6 +1259,7 @@
       await runSimulation();
 
       if (urlParams.get("billing") === "confirmed") {
+        renderPlanUI("pro");
         showToast("Pro Validation subscription confirmed via Shopify Billing API.");
       }
     }
@@ -1659,11 +1772,82 @@
       showToast("Default enterprise validation rules restored.");
     }
 
-    async function activateProSubscription() {
-      const btn = document.getElementById("proPlanBtn");
-      btn.disabled = true;
+    let currentPlan = "pro";
+
+    function renderPlanUI(planName, managedPricingUrl = "") {
+      currentPlan = (planName || "pro").toLowerCase() === "free" ? "free" : "pro";
+      const topBtn = document.getElementById("proPlanBtn");
+      if (topBtn) {
+        topBtn.textContent = currentPlan === "free"
+          ? "Plan: Free Starter ($0/mo)"
+          : "Pro Plan ($9.99/mo)";
+      }
+      const cardFree = document.getElementById("planCardFree");
+      const cardPro = document.getElementById("planCardPro");
+      const badgeFree = document.getElementById("planBadgeFree");
+      const badgePro = document.getElementById("planBadgePro");
+      const btnFree = document.getElementById("btnSelectFree");
+      const btnPro = document.getElementById("btnSelectPro");
+
+      if (cardFree && cardPro) {
+        if (currentPlan === "free") {
+          cardFree.classList.add("is-active");
+          cardPro.classList.remove("is-active");
+          if (badgeFree) badgeFree.style.display = "inline-flex";
+          if (badgePro) badgePro.style.display = "none";
+          if (btnFree) { btnFree.textContent = "✓ Current Plan (Free Starter)"; btnFree.disabled = true; }
+          if (btnPro) { btnPro.textContent = "Upgrade to Pro ($9.99/mo)"; btnPro.disabled = false; }
+        } else {
+          cardFree.classList.remove("is-active");
+          cardPro.classList.add("is-active");
+          if (badgeFree) badgeFree.style.display = "none";
+          if (badgePro) badgePro.style.display = "inline-flex";
+          if (btnFree) { btnFree.textContent = "Downgrade to Free ($0/mo)"; btnFree.disabled = false; }
+          if (btnPro) { btnPro.textContent = "✓ Current Plan (Pro Validation)"; btnPro.disabled = true; }
+        }
+      }
+      const linkWrap = document.getElementById("managedPricingLinkWrap");
+      const linkEl = document.getElementById("managedPricingLink");
+      if (linkWrap && linkEl) {
+        if (managedPricingUrl) {
+          linkEl.href = managedPricingUrl;
+          linkWrap.style.display = "block";
+        } else {
+          linkWrap.style.display = "none";
+        }
+      }
+    }
+
+    async function openBillingModal() {
+      const modal = document.getElementById("billingModal");
+      if (modal) modal.classList.add("is-open");
+      renderPlanUI(currentPlan);
       try {
-        const res = await apiFetch(`/api/billing/subscribe?shop=${encodeURIComponent(currentShop)}`, {
+        const res = await apiFetch(`/api/billing/status?shop=${encodeURIComponent(currentShop)}`);
+        if (res.ok) {
+          const data = await res.json();
+          renderPlanUI(data.plan || currentPlan, data.managed_pricing_url || "");
+          const st = document.getElementById("billingModalStatus");
+          if (st) {
+            st.textContent = `Active Plan for ${data.shop}: ${currentPlan === "free" ? "Free Starter ($0/mo)" : "Pro Validation ($9.99/mo · 14-day trial)"}`;
+          }
+        }
+      } catch (_) {}
+    }
+
+    function closeBillingModal() {
+      const modal = document.getElementById("billingModal");
+      if (modal) modal.classList.remove("is-open");
+    }
+
+    async function activateProSubscription() {
+      const btn = document.getElementById("btnSelectPro") || document.getElementById("proPlanBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "⏳ Connecting to Shopify Billing...";
+      }
+      try {
+        const res = await apiFetch(`/api/billing/subscribe?shop=${encodeURIComponent(currentShop)}&plan=pro`, {
           method: "POST"
         });
         const data = await res.json();
@@ -1680,15 +1864,36 @@
             a.click();
           } catch (_) {}
           if (window.top !== window.self) {
-            try { window.top.location.href = data.confirmation_url; } catch (_) { window.location.href = data.confirmation_url; }
+            try { window.top.location.href = data.confirmation_url; } catch (_) {}
           } else {
             window.location.href = data.confirmation_url;
           }
           return;
         }
+        renderPlanUI("pro", data.managed_pricing_url || "");
+        closeBillingModal();
         showToast("Pro Validation Plan active (14-day free trial via Shopify Billing API).");
-      } finally {
-        btn.disabled = false;
+      } catch (_) {
+        renderPlanUI(currentPlan);
+      }
+    }
+
+    async function downgradeToFreePlan() {
+      const btn = document.getElementById("btnSelectFree");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "⏳ Switching to Free Starter...";
+      }
+      try {
+        const res = await apiFetch(`/api/billing/downgrade?shop=${encodeURIComponent(currentShop)}`, {
+          method: "POST"
+        });
+        const data = await res.json();
+        renderPlanUI("free", data.managed_pricing_url || "");
+        closeBillingModal();
+        showToast("Plan downgraded to Free Starter ($0/mo). You can upgrade back to Pro anytime.");
+      } catch (_) {
+        renderPlanUI(currentPlan);
       }
     }
 
