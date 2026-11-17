@@ -848,6 +848,14 @@
       <button type="button" class="btn btn--sm" style="background:transparent;color:#fff;border-color:rgba(255,255,255,0.3)" onclick="hideToast()">Dismiss</button>
     </div>
 
+    <div id="reviewPromptBanner" style="display:none;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin-bottom:14px;border-radius:var(--radius-md);background:#eef6ff;border:1px solid #b8dafe;color:#1a1a1a;font-size:12.5px;">
+      <span>&#10024; <strong>Rules synced to Shopify!</strong> Saving time with CartLogic? Support us with a quick rating on the Shopify App Store.</span>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <a id="reviewAppStoreLink" href="https://apps.shopify.com/cartlogic-order-limits#modal-show=WriteReviewModal" target="_top" class="btn btn--primary btn--sm" style="text-decoration:none;">&#9733; Rate in 10 seconds</a>
+        <button type="button" class="btn btn--sm" onclick="dismissReviewBanner()">Dismiss</button>
+      </div>
+    </div>
+
     <!-- KPI Metrics Strip -->
     <section class="kpi-grid">
       <div class="kpi-card">
@@ -855,7 +863,7 @@
           <span>Active Validation Rules</span>
           <svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg>
         </div>
-        <div class="kpi-value" id="kpiActiveCount">4 / 4</div>
+        <div class="kpi-value" id="kpiActiveCount">0 / 0</div>
         <div class="kpi-meta" id="kpiSchemaVersion">Schema: cart-checkout-validation.v1</div>
       </div>
 
@@ -882,8 +890,8 @@
           <span>Live Cart Test Status</span>
           <svg class="icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </div>
-        <div class="kpi-value" id="kpiSimStatus">2 Violations</div>
-        <div class="kpi-meta" id="kpiSimSubtotal">Simulated Cart: €806.50 (10 units)</div>
+        <div class="kpi-value" id="kpiSimStatus">Ready</div>
+        <div class="kpi-meta" id="kpiSimSubtotal">Simulated Cart: €0.00 (0 units)</div>
       </div>
     </section>
 
@@ -901,7 +909,7 @@
               </div>
             </div>
             <div style="display:flex;gap:8px;">
-              <button type="button" class="btn btn--sm" onclick="resetDefaultRules()">Reset Defaults</button>
+              <button type="button" id="resetDefaultsBtn" class="btn btn--sm" onclick="resetDefaultRules()">Reset Defaults</button>
               <button type="button" class="btn btn--primary btn--sm" onclick="openNewRuleComposer()">+ New Validation Rule</button>
             </div>
           </div>
@@ -1103,6 +1111,7 @@
         <button type="button" class="btn btn--sm" onclick="closeBillingModal()">&#10005; Close</button>
       </div>
       <div class="modal-body">
+        <div id="billingUpgradeReason" style="display:none;margin-bottom:12px;padding:10px 12px;border-radius:6px;background:#fff8e6;border:1px solid #eec200;color:#4f3b00;font-size:12.5px;font-weight:500;"></div>
         <div id="billingModalStatus" style="font-size:12.5px;color:var(--text-secondary);"></div>
         <div class="plans-grid">
           <div id="planCardFree" class="plan-box">
@@ -1190,7 +1199,8 @@
       rules: [],
       catalog: { collections: [], products: [] },
       default_templates: {},
-      cart: []
+      cart: [],
+      app_handle: "cartlogic-order-limits"
     };
 
     async function apiFetch(path, options = {}) {
@@ -1248,6 +1258,15 @@
       appState.rules = data.rules || [];
       appState.catalog = data.catalog || { collections: [], products: [] };
       appState.default_templates = data.default_templates || {};
+      appState.app_handle = data.app_handle || "cartlogic-order-limits";
+      const reviewLinkEl = document.getElementById("reviewAppStoreLink");
+      if (reviewLinkEl) {
+        reviewLinkEl.href = `https://apps.shopify.com/${encodeURIComponent(appState.app_handle)}#modal-show=WriteReviewModal`;
+      }
+      const resetBtn = document.getElementById("resetDefaultsBtn");
+      if (resetBtn) {
+        resetBtn.style.display = currentShop === "demo-store.myshopify.com" ? "inline-flex" : "none";
+      }
       renderPlanUI(data.plan || "free", data.managed_pricing_url || "", data.active_subscriptions || []);
 
       // Initialize simulated cart quantities from catalog
@@ -1351,10 +1370,36 @@
         .replace(/\{shortfall\}/g, shortV);
     }
 
+    function focusRuleComposer() {
+      openNewRuleComposer();
+      const panel = document.getElementById("ruleComposerPanel");
+      if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      const nameInput = document.getElementById("formRuleName");
+      if (nameInput) nameInput.focus();
+    }
+
+    function maybeShowReviewPrompt() {
+      try {
+        if (localStorage.getItem("cartlogic_review_dismissed") === "1") return;
+      } catch (_) {}
+      const el = document.getElementById("reviewPromptBanner");
+      if (el) el.style.display = "flex";
+    }
+
+    function dismissReviewBanner() {
+      try { localStorage.setItem("cartlogic_review_dismissed", "1"); } catch (_) {}
+      const el = document.getElementById("reviewPromptBanner");
+      if (el) el.style.display = "none";
+    }
+
     function renderRulesTable() {
       const tbody = document.getElementById("rulesTableBody");
       if (!appState.rules.length) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">No validation rules configured. Click "+ New Validation Rule" to create one.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:28px 16px;">
+          <div style="font-weight:600;color:var(--text-primary);margin-bottom:6px;">No validation rules configured yet</div>
+          <div style="font-size:12px;margin-bottom:12px;">Create your first rule below using products or collections from your live Shopify store.</div>
+          <button type="button" class="btn btn--primary btn--sm" onclick="focusRuleComposer()">+ Create First Rule from Store Catalog</button>
+        </td></tr>`;
         return;
       }
 
@@ -1546,7 +1591,13 @@
       const tpl = document.getElementById("formErrorTemplate").value || "";
       const rtype = document.getElementById("formRuleType").value;
       const targetRaw = (document.getElementById("formTargetSelect").value || "").split("|");
-      const targetTitle = (targetRaw[2] && targetRaw[2] !== "Entire Catalog") ? targetRaw[2] : "Nitro Cold Brew Concentrate 1L";
+      const firstLiveProduct = (appState.catalog && appState.catalog.products && appState.catalog.products[0])
+        ? appState.catalog.products[0].title
+        : "";
+      const fallbackTitle = currentShop === "demo-store.myshopify.com"
+        ? "Nitro Cold Brew Concentrate 1L"
+        : (firstLiveProduct || "Selected Store Product");
+      const targetTitle = (targetRaw[2] && targetRaw[2] !== "Entire Catalog") ? targetRaw[2] : fallbackTitle;
       const minV = document.getElementById("formMinVal").value || (rtype === "cart_value" ? "250.00" : "1");
       const maxV = document.getElementById("formMaxVal").value || (rtype === "cart_value" ? "5000.00" : "2");
       const stepV = document.getElementById("formStepVal").value || "6";
@@ -1678,6 +1729,15 @@
       const target_title = targetRaw[2] || "Entire Catalog";
       const customer_segment = document.getElementById("formCustomerSegment").value;
       const customer_tag = document.getElementById("formCustomerTag").value.trim();
+
+      if (currentShop !== "demo-store.myshopify.com" && currentPlan === "free") {
+        const activeRulesCount = appState.rules.filter(r => r.is_active && r.rule_id !== rule_id).length;
+        if (activeRulesCount >= 2 || customer_segment === "b2b_only") {
+          openBillingModal("Free Starter includes up to 2 active validation rules. Upgrade to Pro Validation ($9.99/mo · 14-day free trial) for unlimited rules and B2B wholesale tag targeting.");
+          return;
+        }
+      }
+
       const minRaw = document.getElementById("formMinVal").value;
       const maxRaw = document.getElementById("formMaxVal").value;
       const stepRaw = document.getElementById("formStepVal").value;
@@ -1712,9 +1772,19 @@
       await runSimulation();
       openNewRuleComposer();
       showToast(`Validation rule "${name}" saved and compiled.`);
+      maybeShowReviewPrompt();
     }
 
     async function toggleRule(ruleId) {
+      const targetRule = appState.rules.find(x => x.rule_id === ruleId);
+      if (currentShop !== "demo-store.myshopify.com" && currentPlan === "free" && targetRule && !targetRule.is_active) {
+        const activeCount = appState.rules.filter(x => x.is_active).length;
+        if (activeCount >= 2) {
+          renderRulesTable();
+          openBillingModal("Free Starter includes up to 2 active validation rules. Upgrade to Pro Validation ($9.99/mo · 14-day free trial) for unlimited rules.");
+          return;
+        }
+      }
       const res = await apiFetch(`/api/rules/${encodeURIComponent(ruleId)}/toggle?shop=${encodeURIComponent(currentShop)}`, {
         method: "POST"
       });
@@ -1763,6 +1833,7 @@
         const data = await res.json();
         updateJsonPreview(data.compiled_config);
         showToast(`Synchronized ${data.compiled_config.active_rules_count} active validation rules to Shopify Function Metafield.`);
+        maybeShowReviewPrompt();
       } finally {
         btn.disabled = false;
       }
@@ -1830,9 +1901,19 @@
       }
     }
 
-    async function openBillingModal() {
+    async function openBillingModal(reason = "") {
       const modal = document.getElementById("billingModal");
       if (modal) modal.classList.add("is-open");
+      const reasonEl = document.getElementById("billingUpgradeReason");
+      if (reasonEl) {
+        if (reason) {
+          reasonEl.textContent = reason;
+          reasonEl.style.display = "block";
+        } else {
+          reasonEl.textContent = "";
+          reasonEl.style.display = "none";
+        }
+      }
       renderPlanUI(currentPlan, "", activeSubscriptions);
       try {
         const res = await apiFetch(`/api/billing/status?shop=${encodeURIComponent(currentShop)}`);

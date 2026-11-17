@@ -261,6 +261,7 @@ def test_billing_upgrade_and_downgrade():
         r_boot = client.get(f"/api/bootstrap?shop={live_shop}")
         assert r_boot.status_code == 200
         assert r_boot.json()["catalog"]["products"] == []
+        assert r_boot.json()["rules"] == []
         assert r_boot.json()["plan"] == "free"
 
         r_sub = client.post(f"/api/billing/subscribe?shop={live_shop}&plan=pro")

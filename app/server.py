@@ -211,6 +211,13 @@ def ensure_seed_rules(shop_key: str) -> List[Dict[str, Any]]:
     return list_rules(shop_key)
 
 
+def get_rules_for_shop(clean_shop: str, session_key: str) -> List[Dict[str, Any]]:
+    """Seeds demo defaults only for demo-store.myshopify.com; live stores strictly read store rules."""
+    if clean_shop == DEMO_SHOP:
+        return ensure_seed_rules(session_key)
+    return list_rules(session_key)
+
+
 def get_session_key(shop: str, x_demo_session: Optional[str]) -> str:
     clean_shop = (shop or DEMO_SHOP).strip().lower()
     if clean_shop != DEMO_SHOP:
@@ -469,7 +476,7 @@ async def api_bootstrap(
 ) -> Dict[str, Any]:
     clean_shop = (shop or DEMO_SHOP).strip().lower()
     session_key = get_session_key(clean_shop, x_demo_session)
-    rules = ensure_seed_rules(session_key)
+    rules = get_rules_for_shop(clean_shop, session_key)
     enforcement = get_shop_enforcement(session_key)
 
     await resolve_shop_session(clean_shop, request=request)
@@ -508,6 +515,7 @@ async def api_bootstrap(
             "shop": clean_shop,
             "mode": "live_shopify",
             "plan": billing_state["plan"],
+            "app_handle": billing_state["app_handle"] or "cartlogic-order-limits",
             "active_subscriptions": billing_state["active_subscriptions"],
             "managed_pricing_url": _build_managed_pricing_url(clean_shop, billing_state["app_handle"]),
             "enforcement_enabled": enforcement,
@@ -526,6 +534,7 @@ async def api_bootstrap(
         "shop": clean_shop,
         "mode": "sandbox",
         "plan": get_shop_plan(clean_shop),
+        "app_handle": "cartlogic-order-limits",
         "enforcement_enabled": enforcement,
         "rules": rules,
         "catalog": catalog,
@@ -543,7 +552,7 @@ async def api_save_rule(
 ) -> Dict[str, Any]:
     clean_shop = (shop or DEMO_SHOP).strip().lower()
     session_key = get_session_key(clean_shop, x_demo_session)
-    ensure_seed_rules(session_key)
+    get_rules_for_shop(clean_shop, session_key)
 
     rule_id = (payload.rule_id or "").strip() or f"rule-{uuid.uuid4().hex[:8]}"
     template = (payload.error_template or "").strip() or DEFAULT_ERROR_TEMPLATES.get(
@@ -591,7 +600,7 @@ async def api_toggle_rule(
 ) -> Dict[str, Any]:
     clean_shop = (shop or DEMO_SHOP).strip().lower()
     session_key = get_session_key(clean_shop, x_demo_session)
-    rules = ensure_seed_rules(session_key)
+    rules = get_rules_for_shop(clean_shop, session_key)
     target = next((r for r in rules if r["rule_id"] == rule_id), None)
     if not target:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -622,7 +631,7 @@ async def api_delete_rule(
 ) -> Dict[str, Any]:
     clean_shop = (shop or DEMO_SHOP).strip().lower()
     session_key = get_session_key(clean_shop, x_demo_session)
-    ensure_seed_rules(session_key)
+    get_rules_for_shop(clean_shop, session_key)
     deleted = delete_rule(session_key, rule_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -652,7 +661,7 @@ async def api_set_enforcement(
         "ENFORCEMENT_UPDATED",
         {"enabled": payload.enabled},
     )
-    rules = ensure_seed_rules(session_key)
+    rules = get_rules_for_shop(clean_shop, session_key)
     return {
         "status": "updated",
         "enforcement_enabled": payload.enabled,
@@ -669,7 +678,7 @@ async def api_simulate_checkout(
 ) -> Dict[str, Any]:
     clean_shop = (shop or DEMO_SHOP).strip().lower()
     session_key = get_session_key(clean_shop, x_demo_session)
-    rules = ensure_seed_rules(session_key)
+    rules = get_rules_for_shop(clean_shop, session_key)
     enforcement = get_shop_enforcement(session_key)
 
     cart_items = [item.model_dump() for item in payload.items]
@@ -696,7 +705,7 @@ async def api_sync_to_shopify(
 ) -> Dict[str, Any]:
     clean_shop = (shop or DEMO_SHOP).strip().lower()
     session_key = get_session_key(clean_shop, x_demo_session)
-    rules = ensure_seed_rules(session_key)
+    rules = get_rules_for_shop(clean_shop, session_key)
     enforcement = get_shop_enforcement(session_key)
     compiled = compile_shopify_function_config(clean_shop, rules, enforcement)
 
@@ -738,10 +747,13 @@ async def api_reset_defaults(
     existing = list_rules(session_key)
     for r in existing:
         delete_rule(session_key, r["rule_id"])
-    for r in DEFAULT_RULES:
-        save_rule(session_key, r)
+    if clean_shop == DEMO_SHOP:
+        for r in DEFAULT_RULES:
+            save_rule(session_key, r)
+        add_audit_log(session_key, "DEFAULTS_RESTORED", {"rules_count": len(DEFAULT_RULES)})
+    else:
+        add_audit_log(session_key, "RULES_CLEARED", {"rules_count": 0})
     set_shop_enforcement(session_key, True)
-    add_audit_log(session_key, "DEFAULTS_RESTORED", {"rules_count": len(DEFAULT_RULES)})
     rules = list_rules(session_key)
     return {
         "status": "reset",
@@ -759,7 +771,7 @@ async def api_export_config(
 ) -> PlainTextResponse:
     clean_shop = (shop or DEMO_SHOP).strip().lower()
     session_key = get_session_key(clean_shop, x_demo_session)
-    rules = ensure_seed_rules(session_key)
+    rules = get_rules_for_shop(clean_shop, session_key)
     enforcement = get_shop_enforcement(session_key)
     compiled = compile_shopify_function_config(clean_shop, rules, enforcement)
     return PlainTextResponse(
