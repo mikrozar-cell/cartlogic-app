@@ -253,22 +253,30 @@ def test_billing_upgrade_and_downgrade():
     upsert_shop(live_shop, "shpat_mock_cl_token", "read_products,write_products")
 
     with (
+        patch("app.shopify_client.ShopifyGraphQLClient.fetch_catalog_targets", new=AsyncMock(return_value={"collections": [], "products": []})),
         patch("app.shopify_client.ShopifyGraphQLClient.create_subscription", new=AsyncMock(side_effect=RuntimeError("Managed Pricing Apps cannot use the Billing API"))),
         patch("app.shopify_client.ShopifyGraphQLClient.cancel_active_subscriptions", new=AsyncMock(return_value=[])),
         patch("app.shopify_client.ShopifyGraphQLClient.get_billing_info", new=AsyncMock(return_value={"app_handle": "cartlogic-order-limits", "active_subscriptions": []})),
     ):
+        r_boot = client.get(f"/api/bootstrap?shop={live_shop}")
+        assert r_boot.status_code == 200
+        assert r_boot.json()["catalog"]["products"] == []
+        assert r_boot.json()["plan"] == "free"
+
         r_sub = client.post(f"/api/billing/subscribe?shop={live_shop}&plan=pro")
         assert r_sub.status_code == 200
-        assert r_sub.json()["plan"] == "pro"
-
-        r_down = client.post(f"/api/billing/downgrade?shop={live_shop}")
-        assert r_down.status_code == 200
-        assert r_down.json()["plan"] == "free"
+        assert r_sub.json()["status"] == "redirect"
+        assert r_sub.json()["plan"] == "free"
+        assert "pricing_plans" in r_sub.json()["confirmation_url"]
 
         r_st = client.get(f"/api/billing/status?shop={live_shop}")
         assert r_st.status_code == 200
         assert r_st.json()["plan"] == "free"
 
-        r_reup = client.post(f"/api/billing/subscribe?shop={live_shop}&plan=pro")
-        assert r_reup.status_code == 200
-        assert r_reup.json()["plan"] == "pro"
+    with patch(
+        "app.shopify_client.ShopifyGraphQLClient.get_billing_info",
+        new=AsyncMock(return_value={"app_handle": "cartlogic-order-limits", "active_subscriptions": [{"id": "gid://shopify/AppSubscription/3", "name": "Pro Validation", "status": "ACTIVE"}]}),
+    ):
+        r_st_pro = client.get(f"/api/billing/status?shop={live_shop}")
+        assert r_st_pro.status_code == 200
+        assert r_st_pro.json()["plan"] == "pro"

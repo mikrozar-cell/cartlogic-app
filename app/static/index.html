@@ -1229,6 +1229,16 @@
 
     async function initApp() {
       const res = await apiFetch(`/api/bootstrap?shop=${encodeURIComponent(currentShop)}`);
+      if (res.status === 401 && currentShop !== "demo-store.myshopify.com") {
+        let target = `/auth?shop=${encodeURIComponent(currentShop)}`;
+        try {
+          const err = await res.json();
+          if (err && err.detail && err.detail.auth_url) target = err.detail.auth_url;
+        } catch (_) {}
+        try { window.open(target, "_top"); } catch (_) {}
+        if (window.top === window.self) window.location.href = target;
+        return;
+      }
       if (!res.ok) {
         showToast("Unable to load rules right now. Please refresh.");
         return;
@@ -1238,7 +1248,7 @@
       appState.rules = data.rules || [];
       appState.catalog = data.catalog || { collections: [], products: [] };
       appState.default_templates = data.default_templates || {};
-      if (data.plan) renderPlanUI(data.plan);
+      renderPlanUI(data.plan || "free", data.managed_pricing_url || "", data.active_subscriptions || []);
 
       // Initialize simulated cart quantities from catalog
       appState.cart = (appState.catalog.products || []).map(p => ({
@@ -1772,10 +1782,12 @@
       showToast("Default enterprise validation rules restored.");
     }
 
-    let currentPlan = "pro";
+    let currentPlan = "free";
+    let activeSubscriptions = [];
 
-    function renderPlanUI(planName, managedPricingUrl = "") {
-      currentPlan = (planName || "pro").toLowerCase() === "free" ? "free" : "pro";
+    function renderPlanUI(planName, managedPricingUrl = "", subs = activeSubscriptions) {
+      currentPlan = (planName || "free").toLowerCase() === "pro" ? "pro" : "free";
+      activeSubscriptions = Array.isArray(subs) ? subs : [];
       const topBtn = document.getElementById("proPlanBtn");
       if (topBtn) {
         topBtn.textContent = currentPlan === "free"
@@ -1821,15 +1833,22 @@
     async function openBillingModal() {
       const modal = document.getElementById("billingModal");
       if (modal) modal.classList.add("is-open");
-      renderPlanUI(currentPlan);
+      renderPlanUI(currentPlan, "", activeSubscriptions);
       try {
         const res = await apiFetch(`/api/billing/status?shop=${encodeURIComponent(currentShop)}`);
         if (res.ok) {
           const data = await res.json();
-          renderPlanUI(data.plan || currentPlan, data.managed_pricing_url || "");
+          renderPlanUI(data.plan || "free", data.managed_pricing_url || "", data.active_subscriptions || []);
           const st = document.getElementById("billingModalStatus");
           if (st) {
-            st.textContent = `Active Plan for ${data.shop}: ${currentPlan === "free" ? "Free Starter ($0/mo)" : "Pro Validation ($9.99/mo · 14-day trial)"}`;
+            const sub = (data.active_subscriptions || [])[0];
+            if (currentPlan === "pro" && sub) {
+              const exp = sub.currentPeriodEnd ? ` · Next billing/expiry: ${String(sub.currentPeriodEnd).split("T")[0]}` : "";
+              const trial = sub.trialDays ? ` · ${sub.trialDays}-day trial` : "";
+              st.textContent = `Active Subscription for ${data.shop}: ${sub.name || "Pro Validation"} (${sub.status || "ACTIVE"}${trial}${exp})`;
+            } else {
+              st.textContent = `Active Plan for ${data.shop}: ${currentPlan === "free" ? "Free Starter ($0/mo)" : "Pro Validation ($9.99/mo · 14-day trial)"}`;
+            }
           }
         }
       } catch (_) {}
@@ -1889,7 +1908,11 @@
           method: "POST"
         });
         const data = await res.json();
-        renderPlanUI("free", data.managed_pricing_url || "");
+        if (data.status === "redirect" && data.confirmation_url) {
+          try { window.open(data.confirmation_url, "_top"); } catch (_) {}
+          return;
+        }
+        renderPlanUI("free", data.managed_pricing_url || "", []);
         closeBillingModal();
         showToast("Plan downgraded to Free Starter ($0/mo). You can upgrade back to Pro anytime.");
       } catch (_) {

@@ -442,6 +442,25 @@ class SimulationInput(BaseModel):
     checkout_surface: str = "standard_checkout"
 
 
+def _is_auth_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "401" in msg or "403" in msg or "unauthorized" in msg or "access denied" in msg
+
+
+async def _resolve_live_plan(clean_shop: str, client: ShopifyGraphQLClient) -> Dict[str, Any]:
+    try:
+        info = await client.get_billing_info()
+        all_subs = info.get("active_subscriptions") or []
+        active_subs = [s for s in all_subs if str(s.get("status", "")).upper() == "ACTIVE"]
+        app_handle = info.get("app_handle") or ""
+        plan = "pro" if active_subs else "free"
+        set_shop_plan(clean_shop, plan)
+        return {"plan": plan, "active_subscriptions": active_subs, "app_handle": app_handle}
+    except Exception:
+        set_shop_plan(clean_shop, "free")
+        return {"plan": "free", "active_subscriptions": [], "app_handle": ""}
+
+
 @app.get("/api/bootstrap")
 async def api_bootstrap(
     request: Request,
@@ -453,37 +472,59 @@ async def api_bootstrap(
     rules = ensure_seed_rules(session_key)
     enforcement = get_shop_enforcement(session_key)
 
-    catalog = copy.deepcopy(DEFAULT_CATALOG)
-    mode = "sandbox"
     await resolve_shop_session(clean_shop, request=request)
     live_session = is_live_shopify_session(clean_shop)
-    if live_session:
+
+    if clean_shop != DEMO_SHOP:
+        if not live_session:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "unauthorized", "auth_url": f"/auth?shop={urllib.parse.quote(clean_shop)}"},
+            )
+        catalog: Dict[str, List[Dict[str, Any]]] = {"collections": [], "products": []}
+        last_exc: Optional[Exception] = None
+        client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
         try:
-            client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
-            live_cat = await client.fetch_catalog_targets(limit=30)
-            if live_cat["products"] or live_cat["collections"]:
-                catalog = live_cat
-            mode = "live_shopify"
-        except Exception:
+            catalog = await client.fetch_catalog_targets(limit=30)
+        except Exception as exc:
+            last_exc = exc
             refreshed = await resolve_shop_session(clean_shop, request=request, force_refresh=True)
             if refreshed and refreshed.get("access_token") and not str(refreshed["access_token"]).startswith("fake_"):
+                client = ShopifyGraphQLClient(clean_shop, refreshed["access_token"])
                 try:
-                    client = ShopifyGraphQLClient(clean_shop, refreshed["access_token"])
-                    live_cat = await client.fetch_catalog_targets(limit=30)
-                    if live_cat["products"] or live_cat["collections"]:
-                        catalog = live_cat
-                    mode = "live_shopify"
-                except Exception:
-                    mode = "sandbox"
-            else:
-                mode = "sandbox"
+                    catalog = await client.fetch_catalog_targets(limit=30)
+                    last_exc = None
+                except Exception as exc2:
+                    last_exc = exc2
+        if last_exc and _is_auth_error(last_exc):
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "unauthorized", "auth_url": f"/auth?shop={urllib.parse.quote(clean_shop)}"},
+            )
+        billing_state = await _resolve_live_plan(clean_shop, client)
+        compiled = compile_shopify_function_config(clean_shop, rules, enforcement)
+        logs = get_audit_logs(session_key, limit=20)
+        return {
+            "shop": clean_shop,
+            "mode": "live_shopify",
+            "plan": billing_state["plan"],
+            "active_subscriptions": billing_state["active_subscriptions"],
+            "managed_pricing_url": _build_managed_pricing_url(clean_shop, billing_state["app_handle"]),
+            "enforcement_enabled": enforcement,
+            "rules": rules,
+            "catalog": catalog,
+            "compiled_config": compiled,
+            "audit_logs": logs,
+            "default_templates": DEFAULT_ERROR_TEMPLATES,
+        }
 
+    catalog = copy.deepcopy(DEFAULT_CATALOG)
     compiled = compile_shopify_function_config(clean_shop, rules, enforcement)
     logs = get_audit_logs(session_key, limit=20)
 
     return {
         "shop": clean_shop,
-        "mode": mode,
+        "mode": "sandbox",
         "plan": get_shop_plan(clean_shop),
         "enforcement_enabled": enforcement,
         "rules": rules,
@@ -743,23 +784,21 @@ async def api_billing_status(
 ) -> Dict[str, Any]:
     clean_shop = (shop or DEMO_SHOP).strip().lower()
     await resolve_shop_session(clean_shop, request=request)
-    current_plan = get_shop_plan(clean_shop)
-    active_subs: List[Dict[str, Any]] = []
-    app_handle = ""
     live_session = is_live_shopify_session(clean_shop)
     if live_session:
-        try:
-            client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
-            info = await client.get_billing_info()
-            active_subs = info.get("active_subscriptions") or []
-            app_handle = info.get("app_handle") or ""
-        except Exception:
-            pass
+        client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
+        billing_state = await _resolve_live_plan(clean_shop, client)
+        return {
+            "shop": clean_shop,
+            "plan": billing_state["plan"],
+            "active_subscriptions": billing_state["active_subscriptions"],
+            "managed_pricing_url": _build_managed_pricing_url(clean_shop, billing_state["app_handle"]),
+        }
     return {
         "shop": clean_shop,
-        "plan": current_plan,
-        "active_subscriptions": active_subs,
-        "managed_pricing_url": _build_managed_pricing_url(clean_shop, app_handle),
+        "plan": get_shop_plan(clean_shop),
+        "active_subscriptions": [],
+        "managed_pricing_url": "",
     }
 
 
@@ -772,8 +811,8 @@ async def api_billing_downgrade(
     await resolve_shop_session(clean_shop, request=request)
     live_session = is_live_shopify_session(clean_shop)
     cancelled_ids: List[str] = []
-    app_handle = ""
     if live_session:
+        client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
         for attempt in range(2):
             try:
                 client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
@@ -786,20 +825,32 @@ async def api_billing_downgrade(
                         live_session = refreshed
                         continue
                 break
-        try:
-            client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
-            info = await client.get_billing_info()
-            app_handle = info.get("app_handle") or ""
-        except Exception:
-            pass
+        billing_state = await _resolve_live_plan(clean_shop, client)
+        managed_url = _build_managed_pricing_url(clean_shop, billing_state["app_handle"])
+        if billing_state["plan"] == "pro" and not cancelled_ids and managed_url:
+            return {
+                "status": "redirect",
+                "mode": "managed_pricing",
+                "plan": "pro",
+                "confirmation_url": managed_url,
+                "managed_pricing_url": managed_url,
+            }
+        set_shop_plan(clean_shop, "free")
+        return {
+            "status": "downgraded",
+            "plan": "free",
+            "plan_label": "Free Starter ($0/mo)",
+            "cancelled_subscriptions": cancelled_ids,
+            "managed_pricing_url": managed_url,
+        }
 
     set_shop_plan(clean_shop, "free")
     return {
         "status": "downgraded",
         "plan": "free",
         "plan_label": "Free Starter ($0/mo)",
-        "cancelled_subscriptions": cancelled_ids,
-        "managed_pricing_url": _build_managed_pricing_url(clean_shop, app_handle),
+        "cancelled_subscriptions": [],
+        "managed_pricing_url": "",
     }
 
 
@@ -816,8 +867,8 @@ async def api_billing_subscribe(
     await resolve_shop_session(clean_shop, request=request)
     live_session = is_live_shopify_session(clean_shop)
     return_url = f"{APP_URL}/?shop={urllib.parse.quote(clean_shop)}&billing=confirmed"
-    app_handle = ""
     if live_session:
+        client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
         for attempt in range(2):
             try:
                 client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
@@ -833,6 +884,7 @@ async def api_billing_subscribe(
                 if sub_data.get("confirmationUrl") and not user_errors:
                     return {
                         "status": "redirect",
+                        "mode": "live_shopify",
                         "plan": "pro",
                         "plan_label": "Pro Validation ($9.99/mo, 14-day free trial)",
                         "confirmation_url": sub_data["confirmationUrl"],
@@ -845,19 +897,15 @@ async def api_billing_subscribe(
                         live_session = refreshed
                         continue
                 break
-        try:
-            client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
-            info = await client.get_billing_info()
-            app_handle = info.get("app_handle") or ""
-        except Exception:
-            pass
-        set_shop_plan(clean_shop, "pro")
+        billing_state = await _resolve_live_plan(clean_shop, client)
+        managed_url = _build_managed_pricing_url(clean_shop, billing_state["app_handle"])
         return {
-            "status": "activated",
-            "mode": "managed_or_self_serve",
-            "plan": "pro",
+            "status": "redirect",
+            "mode": "managed_pricing",
+            "plan": billing_state["plan"],
             "plan_label": "Pro Validation ($9.99/mo, 14-day free trial)",
-            "managed_pricing_url": _build_managed_pricing_url(clean_shop, app_handle),
+            "confirmation_url": managed_url,
+            "managed_pricing_url": managed_url,
         }
 
     set_shop_plan(clean_shop, "pro")

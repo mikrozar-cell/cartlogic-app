@@ -156,6 +156,7 @@ class ShopifyGraphQLClient:
               status
               test
               trialDays
+              currentPeriodEnd
             }
           }
         }

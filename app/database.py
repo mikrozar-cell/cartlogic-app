@@ -120,9 +120,9 @@ def set_shop_plan(shop_domain: str, plan_name: str) -> None:
 def get_shop_plan(shop_domain: str) -> str:
     row = get_shop(shop_domain)
     if not row:
-        return "pro"
-    val = (row.get("plan_name") or "pro").strip().lower()
-    return "free" if val == "free" else "pro"
+        return "free"
+    val = (row.get("plan_name") or "free").strip().lower()
+    return "pro" if val == "pro" else "free"
 
 
 def set_shop_enforcement(shop_domain: str, enabled: bool) -> None:
