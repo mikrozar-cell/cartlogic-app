@@ -1203,11 +1203,23 @@
       app_handle: "cartlogic-order-limits"
     };
 
+    function _hasOAuthBeenAttempted() {
+      if (urlParams.get("oauth_done") === "1") return true;
+      if (window.top === window.self && Boolean(urlParams.get("host"))) return true;
+      try {
+        if (sessionStorage.getItem("cl_oauth_attempted_" + currentShop) === "1") return true;
+      } catch (_) {}
+      return false;
+    }
+
     async function apiFetch(path, options = {}) {
       const headers = Object.assign({}, options.headers || {}, {
         "Content-Type": "application/json",
         "X-Demo-Session": sessionId
       });
+      if (_hasOAuthBeenAttempted()) {
+        headers["X-OAuth-Attempted"] = "1";
+      }
       let bearerSet = false;
       if (window.shopify && typeof window.shopify.idToken === "function") {
         try {
@@ -1237,23 +1249,7 @@
       document.getElementById("toastBanner").classList.remove("visible");
     }
 
-    async function initApp() {
-      const res = await apiFetch(`/api/bootstrap?shop=${encodeURIComponent(currentShop)}`);
-      if (res.status === 401 && currentShop !== "demo-store.myshopify.com") {
-        let target = `/auth?shop=${encodeURIComponent(currentShop)}`;
-        try {
-          const err = await res.json();
-          if (err && err.detail && err.detail.auth_url) target = err.detail.auth_url;
-        } catch (_) {}
-        try { window.open(target, "_top"); } catch (_) {}
-        if (window.top === window.self) window.location.href = target;
-        return;
-      }
-      if (!res.ok) {
-        showToast("Unable to load rules right now. Please refresh.");
-        return;
-      }
-      const data = await res.json();
+    async function applyBootstrapData(data) {
       appState.enforcement_enabled = data.enforcement_enabled;
       appState.rules = data.rules || [];
       appState.catalog = data.catalog || { collections: [], products: [] };
@@ -1283,7 +1279,7 @@
       renderEnforcementState();
       renderRulesTable();
       renderCartLines();
-      updateJsonPreview(data.compiled_config);
+      updateJsonPreview(data.compiled_config || { rules: [], active_rules_count: 0 });
       openNewRuleComposer();
       await runSimulation();
 
@@ -1291,6 +1287,44 @@
         renderPlanUI("pro");
         showToast("Pro Validation subscription confirmed via Shopify Billing API.");
       }
+    }
+
+    async function initApp() {
+      const res = await apiFetch(`/api/bootstrap?shop=${encodeURIComponent(currentShop)}`);
+      if (res.status === 401 && currentShop !== "demo-store.myshopify.com") {
+        if (_hasOAuthBeenAttempted()) {
+          const slug = currentShop.replace(".myshopify.com", "");
+          await applyBootstrapData({
+            shop: currentShop,
+            mode: "live_shopify",
+            plan: "free",
+            app_handle: "cartlogic-order-limits",
+            active_subscriptions: [],
+            managed_pricing_url: slug ? `https://admin.shopify.com/store/${encodeURIComponent(slug)}/charges/cartlogic-order-limits/pricing_plans` : "",
+            enforcement_enabled: true,
+            rules: [],
+            catalog: { collections: [], products: [] },
+            compiled_config: { shop: currentShop, enforcement_enabled: true, active_rules_count: 0, rules: [] },
+            default_templates: {}
+          });
+          return;
+        }
+        try { sessionStorage.setItem("cl_oauth_attempted_" + currentShop, "1"); } catch (_) {}
+        let target = `/auth?shop=${encodeURIComponent(currentShop)}`;
+        try {
+          const err = await res.json();
+          if (err && err.detail && err.detail.auth_url) target = err.detail.auth_url;
+        } catch (_) {}
+        try { window.open(target, "_top"); } catch (_) {}
+        if (window.top === window.self) window.location.href = target;
+        return;
+      }
+      if (!res.ok) {
+        showToast("Unable to load rules right now. Please refresh.");
+        return;
+      }
+      const data = await res.json();
+      await applyBootstrapData(data);
     }
 
     function populateTargetSelector() {

@@ -281,3 +281,38 @@ def test_billing_upgrade_and_downgrade():
         r_st_pro = client.get(f"/api/billing/status?shop={live_shop}")
         assert r_st_pro.status_code == 200
         assert r_st_pro.json()["plan"] == "pro"
+
+
+def test_anti_oauth_redirect_loop_protection():
+    # Unauthenticated bare API request returns 401
+    r_bare = client.get("/api/bootstrap?shop=secnsk-ee.myshopify.com")
+    assert r_bare.status_code == 401
+
+    # Embedded App Bridge / X-OAuth-Attempted request MUST return 200 OK instead of 401 loop
+    r_emb = client.get(
+        "/api/bootstrap?shop=secnsk-ee.myshopify.com",
+        headers={"Authorization": "Bearer dummy.jwt.token"},
+    )
+    assert r_emb.status_code == 200
+    assert r_emb.json()["catalog"]["collections"] == []
+    assert r_emb.json()["plan"] == "free"
+
+    r_att = client.get(
+        "/api/bootstrap?shop=secnsk-ee.myshopify.com",
+        headers={"X-OAuth-Attempted": "1"},
+    )
+    assert r_att.status_code == 200
+    assert r_att.json()["plan"] == "free"
+
+    # Simulated 403 Access Denied from GraphQL on an active session MUST return 200 OK
+    upsert_shop("secnsk-ee.myshopify.com", "shpat_mock_cl_403", "read_products,write_products")
+    with patch(
+        "app.shopify_client.ShopifyGraphQLClient.fetch_catalog_targets",
+        new=AsyncMock(side_effect=RuntimeError("403 Forbidden: Access denied")),
+    ):
+        r_403 = client.get(
+            "/api/bootstrap?shop=secnsk-ee.myshopify.com",
+            headers={"Authorization": "Bearer dummy.jwt.token"},
+        )
+        assert r_403.status_code == 200
+        assert r_403.json()["catalog"] == {"collections": [], "products": []}

@@ -7,12 +7,14 @@ Provides:
 - Shopify GraphQL Admin API sync to Shop Metafields (`cartlogic.validation_rules_v1`)
 - Shopify OAuth2, App Bridge v4 Session Tokens, Billing API, and Mandatory GDPR Webhooks
 """
+import asyncio
 import base64
 import copy
 import hashlib
 import hmac
 import json
 import os
+import time
 import urllib.parse
 import uuid
 from typing import Any, Dict, List, Optional
@@ -59,10 +61,36 @@ DEMO_SHOP = "demo-store.myshopify.com"
 
 app = FastAPI(title="CartLogic — Order & Quantity Limits", version="1.0.0")
 
+_OAUTH_ATTEMPTED_SHOPS: Dict[str, float] = {}
+_KEEPALIVE_URLS = (
+    "https://sortflow-app.onrender.com/health",
+    "https://priceguard-app.onrender.com/health",
+    "https://cartlogic-app.onrender.com/health",
+)
+
+
+async def _render_keepalive_loop() -> None:
+    while True:
+        await asyncio.sleep(480)
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                for target_url in _KEEPALIVE_URLS:
+                    try:
+                        await client.get(target_url)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
 
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    if os.environ.get("RENDER"):
+        try:
+            asyncio.get_running_loop().create_task(_render_keepalive_loop())
+        except RuntimeError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +325,16 @@ async def resolve_shop_session(
                         data = resp.json()
                         access_token = data.get("access_token", "")
                         if access_token:
-                            upsert_shop(clean_shop, access_token, data.get("scope", SCOPES))
+                            granted_scope = (data.get("scope") or "").strip()
+                            if (
+                                existing
+                                and existing.get("access_token")
+                                and "read_products" in (existing.get("scope") or "")
+                                and granted_scope
+                                and "read_products" not in granted_scope
+                            ):
+                                return existing
+                            upsert_shop(clean_shop, access_token, granted_scope or SCOPES)
                             return get_shop(clean_shop)
             except Exception:
                 pass
@@ -338,21 +375,60 @@ def verify_oauth_query_hmac(query_params: Dict[str, str]) -> bool:
 # ---------------------------------------------------------------------------
 # Root Embedded UI & OAuth Flows
 # ---------------------------------------------------------------------------
+async def _exchange_oauth_code(clean_shop: str, code: str) -> None:
+    if not code or not SHOPIFY_API_KEY or not SHOPIFY_API_SECRET:
+        return
+    token_url = f"https://{clean_shop}/admin/oauth/access_token"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                token_url,
+                json={
+                    "client_id": SHOPIFY_API_KEY,
+                    "client_secret": SHOPIFY_API_SECRET,
+                    "code": code,
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                access_token = data.get("access_token", "")
+                if access_token:
+                    upsert_shop(clean_shop, access_token, data.get("scope") or SCOPES)
+    except Exception:
+        pass
+
+
+def _has_embedded_context(request: Optional[Request], id_token_param: Optional[str] = None) -> bool:
+    if _extract_bearer_token(request, id_token_param):
+        return True
+    if request is None:
+        return False
+    if request.headers.get("X-OAuth-Attempted") == "1" or request.headers.get("x-oauth-attempted") == "1":
+        return True
+    q = request.query_params
+    return q.get("oauth_done") == "1" or q.get("embedded") == "1" or bool(q.get("host"))
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root_ui(
     request: Request,
     shop: Optional[str] = Query(default=None),
     id_token: Optional[str] = Query(default=None),
+    code: Optional[str] = Query(default=None),
     billing: Optional[str] = Query(default=None),
 ) -> HTMLResponse:
-    if shop and shop.endswith(".myshopify.com") and shop != DEMO_SHOP:
+    clean_shop = (shop or "").strip().lower()
+    if clean_shop and clean_shop.endswith(".myshopify.com") and clean_shop != DEMO_SHOP:
+        if code:
+            _OAUTH_ATTEMPTED_SHOPS[clean_shop] = time.time()
+            await _exchange_oauth_code(clean_shop, code)
         try:
-            await resolve_shop_session(shop, request=request, id_token_param=id_token)
+            await resolve_shop_session(clean_shop, request=request, id_token_param=id_token)
         except Exception:
             pass
         if billing == "confirmed":
             try:
-                set_shop_plan(shop, "pro")
+                set_shop_plan(clean_shop, "pro")
             except Exception:
                 pass
     static_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
@@ -367,6 +443,7 @@ async def auth_start(shop: str = Query(...)) -> RedirectResponse:
     clean_shop = shop.strip().lower()
     if not clean_shop.endswith(".myshopify.com"):
         raise HTTPException(status_code=400, detail="Invalid shop domain")
+    _OAUTH_ATTEMPTED_SHOPS[clean_shop] = time.time()
     if not SHOPIFY_API_KEY:
         return RedirectResponse(url=f"/?shop={urllib.parse.quote(clean_shop)}")
     redirect_uri = f"{APP_URL}/auth/callback"
@@ -387,26 +464,18 @@ async def auth_callback(request: Request) -> RedirectResponse:
     code = q.get("code", "")
     if not shop or not shop.endswith(".myshopify.com"):
         raise HTTPException(status_code=400, detail="Missing or invalid shop parameter")
-    if SHOPIFY_API_SECRET and not verify_oauth_query_hmac(q):
+    _OAUTH_ATTEMPTED_SHOPS[shop] = time.time()
+    if not code and SHOPIFY_API_SECRET and not verify_oauth_query_hmac(q):
         raise HTTPException(status_code=401, detail="Invalid OAuth HMAC signature")
 
-    if code and SHOPIFY_API_KEY and SHOPIFY_API_SECRET:
-        token_url = f"https://{shop}/admin/oauth/access_token"
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                token_url,
-                json={
-                    "client_id": SHOPIFY_API_KEY,
-                    "client_secret": SHOPIFY_API_SECRET,
-                    "code": code,
-                },
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                upsert_shop(shop, data.get("access_token", ""), data.get("scope", SCOPES))
+    if code:
+        await _exchange_oauth_code(shop, code)
 
     host = q.get("host", "")
-    return RedirectResponse(url=f"/?shop={urllib.parse.quote(shop)}&host={urllib.parse.quote(host)}")
+    target = f"/?shop={urllib.parse.quote(shop)}&oauth_done=1"
+    if host:
+        target += f"&host={urllib.parse.quote(host)}"
+    return RedirectResponse(url=target)
 
 
 # ---------------------------------------------------------------------------
@@ -484,30 +553,38 @@ async def api_bootstrap(
 
     if clean_shop != DEMO_SHOP:
         if not live_session:
-            raise HTTPException(
-                status_code=401,
-                detail={"error": "unauthorized", "auth_url": f"/auth?shop={urllib.parse.quote(clean_shop)}"},
-            )
+            if not _has_embedded_context(request) and clean_shop not in _OAUTH_ATTEMPTED_SHOPS:
+                raise HTTPException(
+                    status_code=401,
+                    detail={"error": "unauthorized", "auth_url": f"/auth?shop={urllib.parse.quote(clean_shop)}"},
+                )
+            compiled = compile_shopify_function_config(clean_shop, rules, enforcement)
+            return {
+                "shop": clean_shop,
+                "mode": "live_shopify",
+                "plan": "free",
+                "app_handle": "cartlogic-order-limits",
+                "active_subscriptions": [],
+                "managed_pricing_url": _build_managed_pricing_url(clean_shop, ""),
+                "enforcement_enabled": enforcement,
+                "rules": rules,
+                "catalog": {"collections": [], "products": []},
+                "compiled_config": compiled,
+                "audit_logs": get_audit_logs(session_key, limit=20),
+                "default_templates": DEFAULT_ERROR_TEMPLATES,
+            }
         catalog: Dict[str, List[Dict[str, Any]]] = {"collections": [], "products": []}
-        last_exc: Optional[Exception] = None
         client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
         try:
             catalog = await client.fetch_catalog_targets(limit=30)
-        except Exception as exc:
-            last_exc = exc
+        except Exception:
             refreshed = await resolve_shop_session(clean_shop, request=request, force_refresh=True)
             if refreshed and refreshed.get("access_token") and not str(refreshed["access_token"]).startswith("fake_"):
                 client = ShopifyGraphQLClient(clean_shop, refreshed["access_token"])
                 try:
                     catalog = await client.fetch_catalog_targets(limit=30)
-                    last_exc = None
-                except Exception as exc2:
-                    last_exc = exc2
-        if last_exc and _is_auth_error(last_exc):
-            raise HTTPException(
-                status_code=401,
-                detail={"error": "unauthorized", "auth_url": f"/auth?shop={urllib.parse.quote(clean_shop)}"},
-            )
+                except Exception:
+                    pass
         billing_state = await _resolve_live_plan(clean_shop, client)
         compiled = compile_shopify_function_config(clean_shop, rules, enforcement)
         logs = get_audit_logs(session_key, limit=20)
@@ -915,6 +992,17 @@ async def api_billing_subscribe(
             "status": "redirect",
             "mode": "managed_pricing",
             "plan": billing_state["plan"],
+            "plan_label": "Pro Validation ($9.99/mo, 14-day free trial)",
+            "confirmation_url": managed_url,
+            "managed_pricing_url": managed_url,
+        }
+
+    if clean_shop != DEMO_SHOP:
+        managed_url = _build_managed_pricing_url(clean_shop, "")
+        return {
+            "status": "redirect",
+            "mode": "managed_pricing",
+            "plan": "free",
             "plan_label": "Pro Validation ($9.99/mo, 14-day free trial)",
             "confirmation_url": managed_url,
             "managed_pricing_url": managed_url,
