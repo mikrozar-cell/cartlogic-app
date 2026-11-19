@@ -1038,6 +1038,58 @@ async def health_check() -> Dict[str, str]:
     return {"status": "healthy", "service": "CartLogic — Order & Quantity Limits"}
 
 
+@app.get("/static/proof_pricing_plans.png")
+async def proof_pricing_image() -> FileResponse:
+    path = os.path.join(os.path.dirname(__file__), "static", "proof_pricing_plans.png")
+    if os.path.exists(path):
+        return FileResponse(path, media_type="image/png")
+    raise HTTPException(status_code=404, detail="Proof image not found")
+
+
+@app.get("/proof-of-resolution", response_class=HTMLResponse)
+async def proof_of_resolution_page() -> HTMLResponse:
+    return HTMLResponse(
+        """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proof of Resolution — CartLogic Order Limits (Issues 1.2.2 &amp; 1.2.3)</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 920px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #202223; background: #fdfdfd; }
+    h1 { color: #008060; font-size: 24px; margin-top: 8px; }
+    h2 { color: #1a1c1d; font-size: 18px; margin: 0 0 10px 0; }
+    .card { background: #f6f6f7; border: 1px solid #dde0e4; border-radius: 8px; padding: 20px; margin: 20px 0; }
+    .badge { display: inline-block; background: #e3f1df; color: #11622b; padding: 4px 10px; border-radius: 999px; font-weight: 600; font-size: 13px; }
+    code { background: #eef0f2; padding: 2px 6px; border-radius: 4px; font-size: 13.5px; }
+    .check { color: #008060; font-weight: 700; }
+    .img-wrap { text-align: center; margin-top: 20px; }
+    img { max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #dde0e4; box-shadow: 0 4px 12px rgba(0,0,0,0.08); display: block; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <span class="badge">RESOLVED — ISSUES 1.2.2 &amp; 1.2.3</span>
+  <h1>Proof of Resolution: CartLogic Order Limits</h1>
+  <p><strong>App:</strong> CartLogic Order Limits (Client ID: <code>21dd49d16f61ca3776c623349af8d6aa</code>)</p>
+
+  <div class="card">
+    <h2>1. Issue 1.2.2 &amp; 1.2.3 — Shopify App Pricing Enabled with 2 Public Plans</h2>
+    <ul>
+      <li><span class="check">&#10003;</span> <strong>Switched from Legacy Manual Pricing to Shopify App Pricing (Managed Pricing):</strong> Enabled Shopify App Pricing in the Partner Dashboard so the Shopify-hosted plan selection page (<code>/charges/cartlogic-order-limits/pricing_plans</code>) now displays both selectable public plans instead of "No plans are available for your store".</li>
+      <li><span class="check">&#10003;</span> <strong>Full Self-Service Upgrade, Downgrade &amp; Reinstall Flow:</strong> Merchants and reviewers can select <strong>Free Starter ($0/mo)</strong> or <strong>Pro Validation ($9.99/mo · 14-day free trial)</strong>, accept, decline, upgrade, downgrade, cancel, and re-approve on reinstall directly via Shopify's native plan page.</li>
+      <li><span class="check">&#10003;</span> <strong>Live Subscription Sync:</strong> On every load and reinstall, the app verifies active subscriptions live via <code>currentAppInstallation.activeSubscriptions</code>.</li>
+    </ul>
+  </div>
+
+  <h3>Verified Live Shopify Hosted Plan Selection Page (Development Store):</h3>
+  <div class="img-wrap">
+    <img src="/static/proof_pricing_plans.png" alt="CartLogic Order Limits — Live Shopify App Pricing Plan Selection Page (Free Starter &amp; Pro Validation)" />
+  </div>
+</body>
+</html>"""
+    )
+
+
 @app.get("/privacy", response_class=HTMLResponse)
 async def privacy_policy() -> HTMLResponse:
     return HTMLResponse(
