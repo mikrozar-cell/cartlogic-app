@@ -55,7 +55,7 @@ from app.validation_engine import (
 _FALLBACK_SECRET = base64.b64decode(b"c2hwc3NfYjlkMTlkOTQzM2NkZWNmNzQzOGQ3YzQzZWNmODMxMTY=").decode("utf-8")
 SHOPIFY_API_KEY = os.environ.get("SHOPIFY_API_KEY", "21dd49d16f61ca3776c623349af8d6aa")
 SHOPIFY_API_SECRET = os.environ.get("SHOPIFY_API_SECRET", _FALLBACK_SECRET)
-APP_URL = os.environ.get("APP_URL", "https://cartlogic-app.onrender.com").rstrip("/")
+APP_URL = os.environ.get("APP_URL", "https://cartlogic.cab2web.com").rstrip("/")
 SCOPES = "read_products,write_products"
 DEMO_SHOP = "demo-store.myshopify.com"
 

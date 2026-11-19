@@ -1,7 +1,7 @@
 # CartLogic — Order & Quantity Limits (Shopify App Configuration)
 client_id = "21dd49d16f61ca3776c623349af8d6aa"
 name = "CartLogic Order Limits"
-application_url = "https://cartlogic-app.onrender.com"
+application_url = "https://cartlogic.cab2web.com"
 embedded = true
 
 [build]
@@ -11,7 +11,7 @@ scopes = "read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "https://cartlogic-app.onrender.com/auth/callback"
+  "https://cartlogic.cab2web.com/auth/callback"
 ]
 
 [webhooks]
