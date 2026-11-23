@@ -295,6 +295,7 @@ async def resolve_shop_session(
                             "subject_token": session_jwt,
                             "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
                             "requested_token_type": requested_type,
+                            **({"expiring": 1} if requested_type.endswith("offline-access-token") else {}),
                         },
                     )
                     if resp.status_code == 200:
@@ -314,6 +315,31 @@ async def resolve_shop_session(
                             return get_shop(clean_shop)
             except Exception:
                 pass
+
+    if force_refresh and existing and existing.get("access_token") and SHOPIFY_API_KEY and SHOPIFY_API_SECRET:
+        token_url = f"https://{clean_shop}/admin/oauth/access_token"
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    token_url,
+                    json={
+                        "client_id": SHOPIFY_API_KEY,
+                        "client_secret": SHOPIFY_API_SECRET,
+                        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+                        "subject_token": existing["access_token"],
+                        "subject_token_type": "urn:shopify:params:oauth:token-type:offline-access-token",
+                        "requested_token_type": "urn:shopify:params:oauth:token-type:offline-access-token",
+                        "expiring": 1,
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    access_token = data.get("access_token", "")
+                    if access_token:
+                        upsert_shop(clean_shop, access_token, (data.get("scope") or "").strip() or existing.get("scope") or SCOPES)
+                        return get_shop(clean_shop)
+        except Exception:
+            pass
 
     return existing
 
@@ -363,6 +389,7 @@ async def _exchange_oauth_code(clean_shop: str, code: str) -> None:
                     "client_id": SHOPIFY_API_KEY,
                     "client_secret": SHOPIFY_API_SECRET,
                     "code": code,
+                    "expiring": 1,
                 },
             )
             if resp.status_code == 200:
@@ -392,6 +419,8 @@ async def root_ui(
     id_token: Optional[str] = Query(default=None),
     code: Optional[str] = Query(default=None),
     billing: Optional[str] = Query(default=None),
+    plan_handle: Optional[str] = Query(default=None),
+    charge_id: Optional[str] = Query(default=None),
 ) -> HTMLResponse:
     clean_shop = (shop or "").strip().lower()
     if clean_shop and clean_shop.endswith(".myshopify.com") and clean_shop != DEMO_SHOP:
@@ -399,12 +428,22 @@ async def root_ui(
             _OAUTH_ATTEMPTED_SHOPS[clean_shop] = time.time()
             await _exchange_oauth_code(clean_shop, code)
         try:
-            await resolve_shop_session(clean_shop, request=request, id_token_param=id_token)
+            await resolve_shop_session(
+                clean_shop,
+                request=request,
+                id_token_param=id_token,
+                force_refresh=bool(id_token),
+            )
         except Exception:
             pass
-        if billing == "confirmed":
+        if billing == "confirmed" or (plan_handle and "pro" in plan_handle.lower()):
             try:
                 set_shop_plan(clean_shop, "pro")
+            except Exception:
+                pass
+        elif plan_handle and "free" in plan_handle.lower():
+            try:
+                set_shop_plan(clean_shop, "free")
             except Exception:
                 pass
     static_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
@@ -499,18 +538,33 @@ def _is_auth_error(exc: Exception) -> bool:
     return "401" in msg or "403" in msg or "unauthorized" in msg or "access denied" in msg
 
 
-async def _resolve_live_plan(clean_shop: str, client: ShopifyGraphQLClient) -> Dict[str, Any]:
-    try:
-        info = await client.get_billing_info()
-        all_subs = info.get("active_subscriptions") or []
-        active_subs = [s for s in all_subs if str(s.get("status", "")).upper() == "ACTIVE"]
-        app_handle = info.get("app_handle") or ""
-        plan = "pro" if active_subs else "free"
-        set_shop_plan(clean_shop, plan)
-        return {"plan": plan, "active_subscriptions": active_subs, "app_handle": app_handle}
-    except Exception:
-        set_shop_plan(clean_shop, "free")
-        return {"plan": "free", "active_subscriptions": [], "app_handle": ""}
+async def _resolve_live_plan(
+    clean_shop: str,
+    client: ShopifyGraphQLClient,
+    request: Optional[Request] = None,
+) -> Dict[str, Any]:
+    active_client = client
+    last_err: Optional[Exception] = None
+    for attempt in range(2):
+        try:
+            info = await active_client.get_billing_info()
+            all_subs = info.get("active_subscriptions") or []
+            active_subs = [s for s in all_subs if str(s.get("status", "")).upper() == "ACTIVE"]
+            app_handle = info.get("app_handle") or ""
+            plan = "pro" if active_subs else "free"
+            set_shop_plan(clean_shop, plan)
+            return {"plan": plan, "active_subscriptions": active_subs, "app_handle": app_handle}
+        except Exception as exc:
+            last_err = exc
+            if attempt == 0:
+                refreshed = await resolve_shop_session(clean_shop, request=request, force_refresh=True)
+                if refreshed and refreshed.get("access_token") and not str(refreshed["access_token"]).startswith("fake_"):
+                    active_client = ShopifyGraphQLClient(clean_shop, refreshed["access_token"])
+                    continue
+            break
+    print(f"[billing] _resolve_live_plan fallback for {clean_shop}: {last_err!r}")
+    saved_plan = get_shop_plan(clean_shop) or "free"
+    return {"plan": saved_plan, "active_subscriptions": [], "app_handle": ""}
 
 
 @app.get("/api/bootstrap")
@@ -561,7 +615,7 @@ async def api_bootstrap(
                     catalog = await client.fetch_catalog_targets(limit=30)
                 except Exception:
                     pass
-        billing_state = await _resolve_live_plan(clean_shop, client)
+        billing_state = await _resolve_live_plan(clean_shop, client, request=request)
         compiled = compile_shopify_function_config(clean_shop, rules, enforcement)
         logs = get_audit_logs(session_key, limit=20)
         return {
@@ -852,7 +906,7 @@ async def api_billing_status(
     live_session = is_live_shopify_session(clean_shop)
     if live_session:
         client = ShopifyGraphQLClient(clean_shop, live_session["access_token"])
-        billing_state = await _resolve_live_plan(clean_shop, client)
+        billing_state = await _resolve_live_plan(clean_shop, client, request=request)
         return {
             "shop": clean_shop,
             "plan": billing_state["plan"],
@@ -890,7 +944,7 @@ async def api_billing_downgrade(
                         live_session = refreshed
                         continue
                 break
-        billing_state = await _resolve_live_plan(clean_shop, client)
+        billing_state = await _resolve_live_plan(clean_shop, client, request=request)
         managed_url = _build_managed_pricing_url(clean_shop, billing_state["app_handle"])
         if billing_state["plan"] == "pro" and not cancelled_ids and managed_url:
             return {
@@ -962,7 +1016,7 @@ async def api_billing_subscribe(
                         live_session = refreshed
                         continue
                 break
-        billing_state = await _resolve_live_plan(clean_shop, client)
+        billing_state = await _resolve_live_plan(clean_shop, client, request=request)
         managed_url = _build_managed_pricing_url(clean_shop, billing_state["app_handle"])
         return {
             "status": "redirect",
