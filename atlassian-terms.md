@@ -35,4 +35,5 @@ These Terms of Service ("Agreement") govern your organization's installation and
 ## 5. Contact
 
 **ApexCloud Enterprise Labs**  
-Email: [mikrozar@gmail.com](mailto:mikrozar@gmail.com)
+Email: [info@cab2web.com](mailto:info@cab2web.com)
+

@@ -11,7 +11,7 @@
 
 ## 1. Support Channels & Contact Information
 
-- **Primary Support Email:** [mikrozar@gmail.com](mailto:mikrozar@gmail.com)
+- **Primary Support Email:** [info@cab2web.com](mailto:info@cab2web.com)
 - **Issue Tracker & Bug Reports:** [https://github.com/mikrozar-cell/cartlogic-app/issues](https://github.com/mikrozar-cell/cartlogic-app/issues)
 - **Support Hours:** Monday – Friday, 08:00 – 18:00 CET (Central European Time), excluding public holidays.
 
@@ -31,3 +31,4 @@
 ## 3. Architecture & Troubleshooting Note ("Runs on Atlassian")
 
 All ApexCloud Enterprise Labs applications run **100% serverless inside the Atlassian Forge Cloud runtime** with **zero external network egress**. If you experience permission errors, verify in your Jira or Confluence Administration console that the latest app version is approved under **Connected Apps**.
+

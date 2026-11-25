@@ -43,5 +43,6 @@ All applications covered by this policy are architected and executed **100% nati
 ## 5. Contact Us
 
 For privacy, GDPR, SOC 2, or security inquiries, please contact our Data Protection & Support team at:  
-**Email:** [mikrozar@gmail.com](mailto:mikrozar@gmail.com)  
+**Email:** [info@cab2web.com](mailto:info@cab2web.com)  
 **Support Portal:** [https://github.com/mikrozar-cell/cartlogic-app/blob/main/atlassian-support.md](https://github.com/mikrozar-cell/cartlogic-app/blob/main/atlassian-support.md)
+
